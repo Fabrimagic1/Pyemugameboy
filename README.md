@@ -1,4 +1,4 @@
-# GameBoy Emulator in Python
+# GameBoy Emulator in Python (No Working cause pc exception)
 
 A full-featured GameBoy emulator written in pure Python, supporting MBC1, save files, PPU, basic APU, and more.
 
