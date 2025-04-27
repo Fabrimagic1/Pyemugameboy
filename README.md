@@ -1,4 +1,4 @@
-# GameBoy Emulator in Python No Working cause pc exception
+# GameBoy Emulator in Python No Working cause kernel exception and it create a bug in PC that could destory your pc 
 
 A full-featured GameBoy emulator written in pure Python, supporting MBC1, save files, PPU, basic APU, and more.
 
