@@ -21,7 +21,6 @@ class InputHandler:
         self.memory = memory
 
     def update(self):
-        mem = self.memory
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -29,14 +28,5 @@ class InputHandler:
                 return False
             if event.type in (pygame.KEYDOWN, pygame.KEYUP) and event.key in KEY_MAP:
                 group, bit = KEY_MAP[event.key]
-                mask = 1 << bit
-                pressed = event.type == pygame.KEYDOWN
-                if group == 0:
-                    old = mem.joypad_buttons
-                    mem.joypad_buttons = (old & ~mask) if pressed else (old | mask)
-                else:
-                    old = mem.joypad_dirs
-                    mem.joypad_dirs = (old & ~mask) if pressed else (old | mask)
-                if pressed and old & mask:
-                    mem.request_interrupt(4)  # Joypad
+                self.memory.set_joypad(group, bit, event.type == pygame.KEYDOWN)
         return True

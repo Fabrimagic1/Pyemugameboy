@@ -250,5 +250,18 @@ class Memory:
         else:
             raise ValueError(f"Indirizzo fuori range: {hex(address)}")
 
+    def set_joypad(self, group, bit, pressed):
+        """Aggiorna un tasto. group 0 = pulsanti (A, B, Select, Start),
+        group 1 = direzioni (Destra, Sinistra, Su, Giù)."""
+        mask = 1 << bit
+        old = self.joypad_buttons if group == 0 else self.joypad_dirs
+        new = (old & ~mask) if pressed else (old | mask)
+        if group == 0:
+            self.joypad_buttons = new
+        else:
+            self.joypad_dirs = new
+        if pressed and old & mask:
+            self.request_interrupt(4)  # Joypad
+
     def request_interrupt(self, bit):
         self.memory[0xFF0F] |= 1 << bit

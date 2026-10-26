@@ -35,6 +35,22 @@ python main.py roms/pokemon_red.gb
 3. Save files (`.sav`) are created automatically next to the ROM.
 4. Close the window, press Esc or Ctrl+C to exit; battery-backed RAM is saved automatically.
 
+## Browser version (temporary ROMs)
+
+The `web/` folder runs the same Python emulator in the browser through [Pyodide](https://pyodide.org).
+You pick a ROM file from your computer: it stays only in the memory of that browser tab, is never
+uploaded to a server and is never saved. Closing or reloading the page discards the ROM and any
+in-game saves.
+
+The page must be served over HTTP (Web Workers don't run from `file://`). From the project root:
+```bash
+python -m http.server 8000
+```
+Then open <http://localhost:8000/web/> and press **Carica ROM** (or drag a `.gb` file onto the page).
+Keyboard controls are the same as the desktop version; on-screen buttons work with mouse and touch.
+The same folder also works on GitHub Pages if Pages is enabled for the repository root.
+Sound is not available in the browser version.
+
 ## Project Structure
 
 ```
@@ -46,6 +62,7 @@ python main.py roms/pokemon_red.gb
 ├── timer.py           # DIV/TIMA timer with interrupt generation
 ├── apu.py             # Basic Audio Processing Unit (square wave channel)
 ├── input_handler.py   # Keyboard-to-joypad mapping and Joypad interrupt
+├── web/               # Browser version (Pyodide): index.html, worker.js, emu_web.py
 ├── roms/              # Folder for your ROM files
 ├── requirements.txt   # Python dependencies
 └── README.md          # This documentation

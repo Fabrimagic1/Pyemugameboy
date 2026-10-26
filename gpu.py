@@ -1,5 +1,4 @@
 import numpy as np
-import pygame
 
 
 class GPU:
@@ -20,12 +19,15 @@ class GPU:
         self.vram = np.frombuffer(memory.memory, dtype=np.uint8)  # vista "live"
         self.headless = headless
         if not headless:
+            # pygame serve solo con la finestra (nel browser si usa headless=True)
+            global pygame
+            import pygame
             pygame.display.init()
             self.screen = pygame.display.set_mode(
                 (self.SCREEN_WIDTH * self.SCALE, self.SCREEN_HEIGHT * self.SCALE))
             pygame.display.set_caption('Gameboy Emulator')
             self.surface = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
-        self.clock = pygame.time.Clock()
+            self.clock = pygame.time.Clock()
         self.mode = self.MODE_OAM
         self.mode_clock = 0
         self.line = 0
@@ -219,15 +221,18 @@ class GPU:
                     continue
                 line[x] = pal[cn]
 
+    def frame_rgb(self):
+        """Frame corrente come array RGB (altezza, larghezza, 3)."""
+        if not self.memory.memory[0xFF40] & 0x80:
+            return np.broadcast_to(self.COLORS[0], (self.SCREEN_HEIGHT, self.SCREEN_WIDTH, 3))
+        return self.COLORS[self.framebuffer]
+
     def render_screen(self, limit_fps=True):
         self.frame_ready = False
-        if not self.headless:
-            if not self.memory.memory[0xFF40] & 0x80:
-                rgb = np.broadcast_to(self.COLORS[0], (self.SCREEN_WIDTH, self.SCREEN_HEIGHT, 3))
-            else:
-                rgb = self.COLORS[self.framebuffer.T]
-            pygame.surfarray.blit_array(self.surface, rgb)
-            pygame.transform.scale(self.surface, self.screen.get_size(), self.screen)
-            pygame.display.flip()
+        if self.headless:
+            return
+        pygame.surfarray.blit_array(self.surface, self.frame_rgb().transpose(1, 0, 2))
+        pygame.transform.scale(self.surface, self.screen.get_size(), self.screen)
+        pygame.display.flip()
         if limit_fps:
             self.clock.tick(60)
