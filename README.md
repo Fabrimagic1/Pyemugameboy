@@ -1,6 +1,8 @@
-# GameBoy Emulator in Python No Working cause kernel exception and it create a bug in PC that could destory your pc 
+# GameBoy Emulator in Python
 
-A full-featured GameBoy emulator written in pure Python, supporting MBC1, save files, PPU, basic APU, and more.
+A GameBoy (DMG) emulator written in Python, supporting ROM-only/MBC1/MBC3/MBC5 cartridges, save files, PPU (background, window, sprites), a basic APU, and more.
+
+The CPU passes all of Blargg's `cpu_instrs` tests and the PPU renders `dmg-acid2` correctly. Being pure Python it runs at roughly 50-70% of real speed on a modern PC.
 
 ## Requirements
 
@@ -21,9 +23,9 @@ A full-featured GameBoy emulator written in pure Python, supporting MBC1, save f
 
 From the project root:
 ```bash
-python main.py
+python main.py roms/pokemon_red.gb
 ```
-1. When prompted, enter the ROM filename (e.g. `roms/pokemon_red.gb`).
+1. Pass the ROM path as an argument, or run `python main.py` and enter it when prompted.
 2. Controls:
    - **A**: Z key
    - **B**: X key
@@ -31,7 +33,7 @@ python main.py
    - **Start**: Enter
    - **Directional Pad**: Arrow keys
 3. Save files (`.sav`) are created automatically next to the ROM.
-4. Close the window or press Ctrl+C to exit; RAM is saved automatically.
+4. Close the window, press Esc or Ctrl+C to exit; battery-backed RAM is saved automatically.
 
 ## Project Structure
 
@@ -51,10 +53,10 @@ python main.py
 
 ## Features
 
-- **Cycle-accurate CPU** with complete opcode set, `EI`/`DI`, interrupt handling
-- **MBC1** memory bank controller (ROM/RAM banking) and persistent save files
-- **Full PPU emulation**: background, sprites, VBlank interrupt, 60 FPS rendering
-- **Basic APU**: square wave channel for music and sound effects
+- **CPU** with the complete opcode set (including CB prefix), `HALT`, delayed `EI`, interrupt handling
+- **MBC1, MBC3 (without RTC) and MBC5** memory bank controllers and persistent save files
+- **PPU emulation**: background, window, sprites (8x8/8x16, 10 per line), LCD modes, STAT/LYC and VBlank interrupts, OAM DMA, 60 FPS rendering
+- **Basic APU**: square wave channels 1 and 2 with length and volume envelope (runs silently if no audio device is available)
 - **DIV & TIMA timers** with proper interrupt generation
 - **Keyboard input** mapped to GameBoy controls, with Joypad interrupt
 
@@ -68,8 +70,8 @@ python main.py
 
 Feel free to submit pull requests or report issues for:
 - Additional APU channels (wave, noise)
-- Enhanced PPU features (window, color palettes)
-- Support for other MBC controllers (MBC3, MBC5)
+- Enhanced PPU features (Game Boy Color palettes)
+- MBC3 real-time clock, MBC2
 - Improved timing accuracy and performance optimizations
 
 Enjoy your retro gaming experience in Python! 🎮
