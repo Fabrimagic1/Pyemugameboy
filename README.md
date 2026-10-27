@@ -1,95 +1,91 @@
-# GameBoy Emulator in Python
+# PyEmu Game Boy
 
-A GameBoy (DMG) emulator written in Python, supporting ROM-only/MBC1/MBC3/MBC5 cartridges, save files, PPU (background, window, sprites), a basic APU, and more.
+A Game Boy (DMG) emulator written in Python, with a full-speed browser version.
 
-The CPU passes all of Blargg's `cpu_instrs` tests and the PPU renders `dmg-acid2` correctly. Being pure Python it runs at roughly 50-70% of real speed on a modern PC.
+### ▶ [Play in your browser](https://fabrimagic1.github.io/Pyemugameboy/)
 
-## Requirements
+Open the page, press **Carica ROM** and pick a `.gb` file from your computer. No installation needed.
+The ROM stays only in the memory of that browser tab: it is never uploaded or saved, so closing the
+page discards it together with any in-game saves.
 
-- **Python** 3.8 or higher
-- **pygame**
-- **numpy**
-
-## Installation
-
-1. Clone or download this repository.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Create a `roms/` folder and place your ROM files there (e.g. `pokemon_red.gb`).
-
-## Usage
-
-From the project root:
-```bash
-python main.py roms/pokemon_red.gb
-```
-1. Pass the ROM path as an argument, or run `python main.py` and enter it when prompted.
-2. Controls:
-   - **A**: Z key
-   - **B**: X key
-   - **Select**: Backspace
-   - **Start**: Enter
-   - **Directional Pad**: Arrow keys
-3. Save files (`.sav`) are created automatically next to the ROM.
-4. Close the window, press Esc or Ctrl+C to exit; battery-backed RAM is saved automatically.
-
-## Browser version (temporary ROMs)
-
-The `web/` folder contains a browser version: <https://fabrimagic1.github.io/Pyemugameboy/>.
-It is a JavaScript port of the Python modules (`web/gb.js`), so it runs at full speed (60 FPS)
-and has complete sound (both square channels with sweep/envelope, wave and noise channels, stereo panning).
-
-You pick a ROM file from your computer: it stays only in the memory of that browser tab, is never
-uploaded to a server and is never saved. Closing or reloading the page discards the ROM and any
-in-game saves.
-
-To run it locally, serve the folder over HTTP from the project root:
-```bash
-python -m http.server 8000
-```
-Then open <http://localhost:8000/web/> and press **Carica ROM** (or drag a `.gb` file onto the page).
-Keyboard controls are the same as the desktop version; on-screen buttons work with mouse and touch.
-
-## Project Structure
-
-```
-/gameboy_emulator/
-├── main.py            # Entry point and main loop (cycle-accurate)
-├── cpu.py             # CPU core, instructions, interrupts, timing
-├── memory.py          # Memory map, MBC1, external RAM, save/load .sav
-├── gpu.py             # PPU, background & sprite rendering via pygame
-├── timer.py           # DIV/TIMA timer with interrupt generation
-├── apu.py             # Basic Audio Processing Unit (square wave channel)
-├── input_handler.py   # Keyboard-to-joypad mapping and Joypad interrupt
-├── web/               # Browser version: index.html and gb.js (JavaScript port with full APU)
-├── roms/              # Folder for your ROM files
-├── requirements.txt   # Python dependencies
-└── README.md          # This documentation
-```
+- **Desktop version** (`main.py`): pure Python with pygame, about 50-70% of real speed
+- **Browser version** (`web/`): JavaScript port of the same design, 60 FPS with full sound
+- The CPU passes all of Blargg's `cpu_instrs` tests and the PPU renders `dmg-acid2` correctly
 
 ## Features
 
-- **CPU** with the complete opcode set (including CB prefix), `HALT`, delayed `EI`, interrupt handling
-- **MBC1, MBC3 (without RTC) and MBC5** memory bank controllers and persistent save files
-- **PPU emulation**: background, window, sprites (8x8/8x16, 10 per line), LCD modes, STAT/LYC and VBlank interrupts, OAM DMA, 60 FPS rendering
-- **Basic APU**: square wave channels 1 and 2 with length and volume envelope (runs silently if no audio device is available)
-- **DIV & TIMA timers** with proper interrupt generation
-- **Keyboard input** mapped to GameBoy controls, with Joypad interrupt
+- **CPU**: complete SM83 instruction set (including the CB prefix), `HALT`, delayed `EI`, interrupts
+- **Cartridges**: ROM-only, MBC1, MBC3 (without real-time clock) and MBC5
+- **PPU**: background, window, sprites (8x8/8x16, 10 per line, DMG priority), LCD modes,
+  STAT/LYC and VBlank interrupts, OAM DMA
+- **Timers**: DIV and TIMA with interrupt generation
+- **Input**: keyboard on desktop; keyboard, mouse and touch buttons in the browser
+- **Sound**
+  - Browser: all four channels (two square waves with sweep and envelope, wave, noise) with stereo mixing
+  - Desktop: square channels 1 and 2 with length and envelope (runs silently without an audio device)
+- **Saves**: battery-backed RAM is written to a `.sav` file next to the ROM (desktop version only)
 
-## Legal & BIOS Notice
+## Controls
 
-- This emulator does **not** include Nintendo’s proprietary BIOS; it uses a placeholder initialization to remain fully legal.
-- **Game ROMs** are **not** included. Only load ROMs you legally own.
-- **Test ROMs** and **homebrew** code (e.g. Blargg’s test ROMs) can be used freely.
+| Game Boy | Keyboard |
+|----------|----------|
+| D-pad    | Arrow keys |
+| A        | Z |
+| B        | X |
+| Start    | Enter |
+| Select   | Backspace |
+
+In the desktop version, Esc closes the emulator.
+
+## Desktop version
+
+Requirements: **Python** 3.8 or higher, **pygame**, **numpy**.
+
+```bash
+pip install -r requirements.txt
+python main.py roms/your_game.gb
+```
+
+You can also run `python main.py` and type the ROM path when prompted. Close the window, press Esc
+or Ctrl+C to exit; battery-backed RAM is saved automatically.
+
+## Browser version
+
+The online version is published from the `gh-pages` branch. To run it locally, serve the project
+over HTTP from its root:
+
+```bash
+python -m http.server 8000
+```
+
+Then open <http://localhost:8000/web/>.
+
+## Project structure
+
+```
+├── main.py            # Desktop entry point and main loop
+├── cpu.py             # CPU core: instructions, interrupts, timing
+├── memory.py          # Memory map, MBC1/MBC3/MBC5, external RAM, .sav files, joypad
+├── gpu.py             # PPU: LCD timing, background, window, sprites
+├── timer.py           # DIV/TIMA timer with interrupt generation
+├── apu.py             # Basic sound (square channels 1 and 2)
+├── input_handler.py   # Keyboard-to-joypad mapping
+├── web/
+│   ├── index.html     # Browser interface
+│   └── gb.js          # JavaScript port of the emulator with full APU
+└── requirements.txt   # Python dependencies
+```
+
+## Legal notice
+
+- This emulator does **not** include Nintendo's boot ROM; it starts from the post-boot register state.
+- **Game ROMs are not included.** Only load ROMs you legally own.
+- Test ROMs and homebrew games (e.g. Blargg's test ROMs) can be used freely.
 
 ## Contributing
 
-Feel free to submit pull requests or report issues for:
-- Additional APU channels (wave, noise)
-- Enhanced PPU features (Game Boy Color palettes)
+Pull requests and issues are welcome, for example for:
+- Wave and noise channels in the desktop version
+- Game Boy Color support
 - MBC3 real-time clock, MBC2
-- Improved timing accuracy and performance optimizations
-
-Enjoy your retro gaming experience in Python! 🎮
+- Timing accuracy and performance
