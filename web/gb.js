@@ -1022,6 +1022,99 @@ class GameBoy {
   runFrame() { this.runCycles(CYCLES_PER_FRAME); }
 
   setKey(group, bit, pressed) { this.memory.setJoypad(group, bit, pressed); }
+
+  // Identifica la ROM, per non caricare uno stato salvato con un altro gioco
+  romId() {
+    const rom = this.memory.rom;
+    return { title: this.title(), checksum: (rom[0x14E] << 8) | rom[0x14F], size: rom.length };
+  }
+
+  // Stato completo della macchina come oggetto JSON (la ROM non è inclusa)
+  saveState() {
+    return {
+      format: "pyemu-gameboy-state",
+      version: STATE_VERSION,
+      rom: this.romId(),
+      memory: snapshot(this.memory, STATE_SKIP.memory),
+      cpu: snapshot(this.cpu, STATE_SKIP.cpu),
+      timer: snapshot(this.timer, STATE_SKIP.timer),
+      ppu: snapshot(this.ppu, STATE_SKIP.ppu),
+      apu: snapshot(this.apu, STATE_SKIP.apu),
+      extraCycles: this.extraCycles,
+    };
+  }
+
+  loadState(state) {
+    if (!state || state.format !== "pyemu-gameboy-state") {
+      throw new Error("Il file non è uno stato salvato di questo emulatore");
+    }
+    if (state.version !== STATE_VERSION) {
+      throw new Error(`Versione dello stato non supportata (${state.version})`);
+    }
+    const id = this.romId();
+    if (state.rom.checksum !== id.checksum || state.rom.size !== id.size) {
+      throw new Error(`Lo stato è stato salvato con un'altra ROM ("${state.rom.title}")`);
+    }
+    restore(this.memory, state.memory);
+    restore(this.cpu, state.cpu);
+    restore(this.timer, state.timer);
+    restore(this.ppu, state.ppu);
+    restore(this.apu, state.apu);
+    this.extraCycles = state.extraCycles;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stati salvati: serializzazione generica dei campi dei componenti
+// ---------------------------------------------------------------------------
+const STATE_VERSION = 1;
+// Campi da non salvare: ROM, riferimenti ad altri componenti, tasti premuti ora,
+// parametri dell'uscita audio che dipendono dal browser
+const STATE_SKIP = {
+  memory: ["rom", "serial", "joyButtons", "joyDirs"],
+  cpu: [],
+  timer: [],
+  ppu: ["work", "display", "bg"],  // rigenerati al frame successivo
+  apu: ["mm", "sampleRate", "hpCharge", "chunk", "buffer", "bufPos"],
+};
+
+function toBase64(bytes) {
+  if (typeof Buffer !== "undefined") return Buffer.from(bytes).toString("base64");
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+function fromBase64(text) {
+  if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(text, "base64"));
+  const bin = atob(text);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function snapshot(obj, skip) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (skip.includes(k)) continue;
+    if (typeof v === "number" || typeof v === "boolean") out[k] = v;
+    else if (v instanceof Uint8Array) out[k] = { u8: toBase64(v) };
+    else if (v instanceof Uint32Array) out[k] = { u32: toBase64(new Uint8Array(v.buffer)) };
+    else if (v && v.constructor === Object) out[k] = snapshot(v, []);
+  }
+  return out;
+}
+
+function restore(obj, data) {
+  for (const [k, v] of Object.entries(data)) {
+    if (!(k in obj)) continue;
+    if (v && v.u8 !== undefined) obj[k].set(fromBase64(v.u8));
+    else if (v && v.u32 !== undefined) obj[k].set(new Uint32Array(fromBase64(v.u32).buffer));
+    else if (v && typeof v === "object") restore(obj[k], v);
+    else obj[k] = v;
+  }
 }
 
 if (typeof module !== "undefined") module.exports = { GameBoy, CLOCK_HZ, CYCLES_PER_FRAME, SHADES };

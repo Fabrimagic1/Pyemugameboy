@@ -83,7 +83,25 @@
     cursor: pointer;
   }
   .file-btn:disabled { opacity: .5; cursor: wait; }
-  #file { display: none; }
+  #file, #stateFile { display: none; }
+  .states {
+    display: flex;
+    gap: 8px;
+    margin: -4px 0 16px;
+  }
+  .state-btn {
+    flex: 1;
+    background: none;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .state-btn:disabled { opacity: .4; cursor: default; }
+  .status a { color: var(--accent); font-weight: 600; }
   .status { color: var(--muted); font-size: .95rem; flex: 1; min-width: 180px; }
   canvas {
     display: block;
@@ -170,6 +188,12 @@
       <span class="status" id="status">Scegli un file .gb oppure trascinalo qui.</span>
     </div>
 
+    <div class="states">
+      <button class="state-btn" id="saveState" disabled>Salva stato</button>
+      <button class="state-btn" id="loadState" disabled>Carica stato</button>
+      <input type="file" id="stateFile" accept=".gbstate,.json">
+    </div>
+
     <canvas id="screen" width="160" height="144"></canvas>
     <div class="bar">
       <span id="title"></span>
@@ -198,11 +222,15 @@
     Tastiera: frecce = croce direzionale, <kbd>Z</kbd> = A, <kbd>X</kbd> = B,
     <kbd>Invio</kbd> = Start, <kbd>Backspace</kbd> = Select.<br>
     La ROM resta solo nella memoria di questa scheda: non viene inviata a nessun server
-    né salvata. Chiudendo o ricaricando la pagina, ROM e salvataggi vengono persi.
+    né salvata. Chiudendo o ricaricando la pagina, ROM e salvataggi vengono persi.<br>
+    Per continuare in un secondo momento usa <b>Salva stato</b>: scarica un file
+    <code>.gbstate</code> con il punto esatto del gioco (compreso il salvataggio interno).
+    La volta dopo carica la stessa ROM e poi <b>Carica stato</b> (o trascina il file qui).
   </p>
 </main>
 
-<script src="gb.js"></script>
+<!-- Il parametro di versione obbliga il browser a non usare una copia vecchia in cache -->
+<script src="gb.js?v=3"></script>
 <script>
   const statusEl = document.getElementById("status");
   const titleEl = document.getElementById("title");
@@ -305,12 +333,77 @@
       });
       lastFrame = -1;
       titleEl.textContent = gb.title() || file.name;
+      saveStateBtn.disabled = loadStateBtn.disabled = false;
       setStatus(audioCtx ? "In esecuzione." : "In esecuzione (audio non disponibile).");
     } catch (err) {
       gb = null;
+      saveStateBtn.disabled = loadStateBtn.disabled = true;
       setStatus("Errore: " + err.message, true);
     }
   }
+
+  // ---------------- Stati salvati (file scaricato dall'utente) ----------------
+  const saveStateBtn = document.getElementById("saveState");
+  const loadStateBtn = document.getElementById("loadState");
+  const stateInput = document.getElementById("stateFile");
+
+  let stateUrl = null;
+
+  function saveState() {
+    if (!gb) {
+      setStatus("Carica prima una ROM.", true);
+      return;
+    }
+    try {
+      if (typeof gb.saveState !== "function") {
+        throw new Error("la pagina usa una versione vecchia dell'emulatore: ricaricala con Ctrl+F5");
+      }
+      const blob = new Blob([JSON.stringify(gb.saveState())], { type: "application/octet-stream" });
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
+      const name = `${(gb.title() || "gioco").replace(/[^\w-]+/g, "_")}_${stamp}.gbstate`;
+      if (stateUrl) URL.revokeObjectURL(stateUrl);
+      stateUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = stateUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Link di riserva per i browser che bloccano il download automatico
+      const link = document.createElement("a");
+      link.href = stateUrl;
+      link.download = name;
+      link.textContent = "tocca qui";
+      statusEl.classList.remove("error");
+      statusEl.replaceChildren(`Stato salvato: ${name}. Se il download non è partito, `, link, ".");
+    } catch (err) {
+      console.error(err);
+      setStatus("Errore nel salvataggio: " + err.message, true);
+    }
+  }
+
+  async function loadStateFile(file) {
+    if (!file) return;
+    if (!gb) {
+      setStatus("Carica prima la ROM del gioco, poi lo stato.", true);
+      return;
+    }
+    try {
+      gb.loadState(JSON.parse(await file.text()));
+      if (audioNode) audioNode.port.postMessage("clear");
+      lastFrame = -1;
+      setStatus("Stato caricato: " + file.name);
+    } catch (err) {
+      setStatus("Errore: " + err.message, true);
+    }
+  }
+
+  saveStateBtn.addEventListener("click", saveState);
+  loadStateBtn.addEventListener("click", () => stateInput.click());
+  stateInput.addEventListener("change", () => {
+    loadStateFile(stateInput.files[0]);
+    stateInput.value = "";
+  });
 
   pick.addEventListener("click", () => { initAudio(); fileInput.click(); });
   fileInput.addEventListener("change", () => {
@@ -322,7 +415,9 @@
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     drop.classList.remove("over");
-    loadFile(e.dataTransfer.files[0]);
+    const file = e.dataTransfer.files[0];
+    if (file && /\.(gbstate|json)$/i.test(file.name)) loadStateFile(file);
+    else loadFile(file);
   });
 
   // ---------------- Ciclo principale a tempo reale ----------------
