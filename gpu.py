@@ -1,93 +1,238 @@
-import pygame
+import numpy as np
+
 
 class GPU:
+    """PPU: modi LCD, LY/LYC, interrupt VBlank/STAT, rendering di sfondo,
+    finestra e sprite per scanline (vettorizzato con numpy)."""
+
     SCREEN_WIDTH = 160
     SCREEN_HEIGHT = 144
+    SCALE = 3
 
-    def __init__(self, memory):
+    MODE_HBLANK, MODE_VBLANK, MODE_OAM, MODE_TRANSFER = 0, 1, 2, 3
+
+    COLORS = np.array([(224, 248, 208), (136, 192, 112),
+                       (52, 104, 86), (8, 24, 32)], dtype=np.uint8)
+
+    def __init__(self, memory, headless=False):
         self.memory = memory
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.SCREEN_WIDTH * 2, self.SCREEN_HEIGHT * 2))
-        pygame.display.set_caption('Gameboy Emulator')
-        self.clock = pygame.time.Clock()
-        self.mode = 2
+        self.vram = np.frombuffer(memory.memory, dtype=np.uint8)  # vista "live"
+        self.headless = headless
+        if not headless:
+            # pygame serve solo con la finestra (nel browser si usa headless=True)
+            global pygame
+            import pygame
+            pygame.display.init()
+            self.screen = pygame.display.set_mode(
+                (self.SCREEN_WIDTH * self.SCALE, self.SCREEN_HEIGHT * self.SCALE))
+            pygame.display.set_caption('Gameboy Emulator')
+            self.surface = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+            self.clock = pygame.time.Clock()
+        self.mode = self.MODE_OAM
         self.mode_clock = 0
         self.line = 0
-        self.framebuffer = [[(255,255,255) for _ in range(self.SCREEN_WIDTH)] for _ in range(self.SCREEN_HEIGHT)]
+        self.window_line = 0
+        self.frame_ready = False
+        self.stat_line = False
+        self.lcd_was_on = True
+        # Framebuffer di indici di colore (0-3) già passati per la palette
+        self.framebuffer = np.zeros((self.SCREEN_HEIGHT, self.SCREEN_WIDTH), dtype=np.uint8)
+        self._xs = np.arange(self.SCREEN_WIDTH, dtype=np.int32)
+
+    # ------------------------------------------------------------------
+    # Temporizzazione
+    # ------------------------------------------------------------------
+    def _set_ly(self, ly):
+        self.line = ly
+        self.memory.memory[0xFF44] = ly
+
+    def _set_mode(self, mode):
+        self.mode = mode
+        mem = self.memory.memory
+        mem[0xFF41] = (mem[0xFF41] & 0xFC) | mode
+
+    def _update_stat(self):
+        mem = self.memory.memory
+        stat = mem[0xFF41]
+        if self.line == mem[0xFF45]:
+            stat |= 0x04
+        else:
+            stat &= ~0x04
+        mem[0xFF41] = stat
+        # L'interrupt STAT scatta sul fronte di salita della linea combinata
+        line = bool((stat & 0x40 and stat & 0x04)
+                    or (stat & 0x08 and self.mode == self.MODE_HBLANK)
+                    or (stat & 0x10 and self.mode == self.MODE_VBLANK)
+                    or (stat & 0x20 and self.mode == self.MODE_OAM))
+        if line and not self.stat_line:
+            mem[0xFF0F] |= 0x02
+        self.stat_line = line
 
     def tick(self, cycles):
+        mem = self.memory.memory
+        if not mem[0xFF40] & 0x80:
+            # LCD spento: LY=0, modo 0
+            if self.lcd_was_on:
+                self.lcd_was_on = False
+                self.mode_clock = 0
+                self._set_ly(0)
+                self._set_mode(self.MODE_HBLANK)
+                self.stat_line = False
+            return
+        if not self.lcd_was_on:
+            self.lcd_was_on = True
+            self.mode_clock = 0
+            self.window_line = 0
+            self._set_mode(self.MODE_OAM)
+            self._update_stat()
+
         self.mode_clock += cycles
-        if self.mode == 2 and self.mode_clock >= 80:
-            self.mode_clock -= 80; self.mode = 3
-        elif self.mode == 3 and self.mode_clock >= 172:
-            self.mode_clock -= 172; self.mode = 0; self.draw_scanline()
-        elif self.mode == 0 and self.mode_clock >= 204:
-            self.mode_clock -= 204; self.line +=1; self.memory.write_byte(0xFF44, self.line)
-            if self.line == 144:
-                self.mode = 1
-                flags = self.memory.read_byte(0xFF0F); self.memory.write_byte(0xFF0F, flags|0x01)
-                self.render_screen()
-            else:
-                self.mode = 2
-        elif self.mode == 1 and self.mode_clock >= 456:
-            self.mode_clock -= 456; self.line +=1; self.memory.write_byte(0xFF44, self.line)
-            if self.line>153:
-                self.mode = 2; self.line = 0; self.memory.write_byte(0xFF44, self.line)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit(); exit()
+        while True:
+            if self.mode == self.MODE_OAM:
+                if self.mode_clock < 80:
+                    break
+                self.mode_clock -= 80
+                self._set_mode(self.MODE_TRANSFER)
+            elif self.mode == self.MODE_TRANSFER:
+                if self.mode_clock < 172:
+                    break
+                self.mode_clock -= 172
+                self.draw_scanline()
+                self._set_mode(self.MODE_HBLANK)
+                self._update_stat()
+            elif self.mode == self.MODE_HBLANK:
+                if self.mode_clock < 204:
+                    break
+                self.mode_clock -= 204
+                self._set_ly(self.line + 1)
+                if self.line == 144:
+                    self._set_mode(self.MODE_VBLANK)
+                    mem[0xFF0F] |= 0x01
+                    self.frame_ready = True
+                else:
+                    self._set_mode(self.MODE_OAM)
+                self._update_stat()
+            else:  # VBLANK
+                if self.mode_clock < 456:
+                    break
+                self.mode_clock -= 456
+                if self.line >= 153:
+                    self._set_ly(0)
+                    self.window_line = 0
+                    self._set_mode(self.MODE_OAM)
+                else:
+                    self._set_ly(self.line + 1)
+                self._update_stat()
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _palette(value):
+        return np.array([(value >> (i * 2)) & 0x03 for i in range(4)], dtype=np.uint8)
+
+    def _tile_row_colors(self, map_base, tile_x, tile_y_line, signed, xbits):
+        """Restituisce gli indici colore (0-3) per una riga di pixel."""
+        vram = self.vram
+        tile_ids = vram[map_base + ((tile_y_line >> 3) & 31) * 32 + ((tile_x >> 3) & 31)].astype(np.int32)
+        if signed:
+            tile_ids = np.where(tile_ids > 127, tile_ids - 256, tile_ids)
+            addr = 0x9000 + tile_ids * 16
+        else:
+            addr = 0x8000 + tile_ids * 16
+        addr = addr + (tile_y_line & 7) * 2
+        lo = vram[addr]
+        hi = vram[addr + 1]
+        bit = 7 - xbits
+        return ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1)
 
     def draw_scanline(self):
-        if self.memory.read_byte(0xFF40)&0x01:
-            self.draw_background()
-            self.draw_sprites()
+        mem = self.memory.memory
+        ly = self.line
+        if ly >= self.SCREEN_HEIGHT:
+            return
+        lcdc = mem[0xFF40]
+        signed = not lcdc & 0x10
+        bg_colors = np.zeros(self.SCREEN_WIDTH, dtype=np.uint8)
 
-    def draw_background(self):
-        scy, scx = self.memory.read_byte(0xFF42), self.memory.read_byte(0xFF43)
-        ly = self.memory.read_byte(0xFF44); lcdc = self.memory.read_byte(0xFF40)
-        tile_map = 0x9C00 if lcdc&0x08 else 0x9800
-        tile_data = 0x8000 if lcdc&0x10 else 0x8800
-        for x in range(self.SCREEN_WIDTH):
-            map_x, map_y = (x+scx)&0xFF, (ly+scy)&0xFF
-            row, col = map_y//8, map_x//8
-            tbl = tile_map + row*32 + col
-            idx = self.memory.read_byte(tbl)
-            if tile_data==0x8800: idx=(idx^0x80)-0x80
-            loc = tile_data + idx*16; loff=(map_y%8)*2
-            b1=self.memory.read_byte(loc+loff); b2=self.memory.read_byte(loc+loff+1)
-            pal=self.memory.read_byte(0xFF47)
-            for bit in range(8):
-                cn=((b2>>(7-bit))&1)<<1|((b1>>(7-bit))&1)
-                self.framebuffer[ly][x]=self.get_color(cn,pal)
+        if lcdc & 0x01:
+            # Sfondo
+            scy, scx = mem[0xFF42], mem[0xFF43]
+            map_base = 0x9C00 if lcdc & 0x08 else 0x9800
+            xs = (self._xs + scx) & 0xFF
+            y = (ly + scy) & 0xFF
+            bg_colors = self._tile_row_colors(map_base, xs, y, signed, xs & 7).astype(np.uint8)
 
-    def draw_sprites(self):
-        lcdc = self.memory.read_byte(0xFF40)
-        if not lcdc&0x02: return
-        sz=16 if lcdc&0x04 else 8
-        for i in range(0,160,4):
-            y=self.memory.read_byte(0xFE00+i)-16; x=self.memory.read_byte(0xFE00+i+1)-8
-            ti=self.memory.read_byte(0xFE00+i+2); at=self.memory.read_byte(0xFE00+i+3)
-            pr=bool(at&0x80); fx=bool(at&0x20); fy=bool(at&0x40)
-            pal_reg=0xFF49 if at&0x10 else 0xFF47
-            for row in range(sz):
-                ln=sz-1-row if fy else row
-                b1=self.memory.read_byte(0x8000+ti*16+ln*2); b2=self.memory.read_byte(0x8000+ti*16+ln*2+1)
-                for col in range(8):
-                    bit=col if fx else 7-col
-                    cn=((b2>>bit)&1)<<1|((b1>>bit)&1)
-                    if cn==0: continue
-                    colr=self.get_color(cn,self.memory.read_byte(pal_reg))
-                    dx,dy=x+col,y+row
-                    if 0<=dx<self.SCREEN_WIDTH and 0<=dy<self.SCREEN_HEIGHT:
-                        if not pr or self.framebuffer[dy][dx]==(255,255,255):
-                            self.framebuffer[dy][dx]=colr
+            # Finestra
+            wy, wx = mem[0xFF4A], mem[0xFF4B] - 7
+            if lcdc & 0x20 and ly >= wy and wx < self.SCREEN_WIDTH:
+                start = max(wx, 0)
+                wxs = self._xs[start:] - wx
+                win_map = 0x9C00 if lcdc & 0x40 else 0x9800
+                bg_colors[start:] = self._tile_row_colors(
+                    win_map, wxs, self.window_line, signed, wxs & 7)
+                self.window_line += 1
 
-    def get_color(self,color_num,palette):
-        v=(palette>>(color_num*2))&0x03
-        return [(255,255,255),(192,192,192),(96,96,96),(0,0,0)][v]
+        line = self._palette(mem[0xFF47])[bg_colors]
 
-    def render_screen(self):
-        for y in range(self.SCREEN_HEIGHT):
-            for x in range(self.SCREEN_WIDTH):
-                pygame.draw.rect(self.screen,self.framebuffer[y][x],pygame.Rect(x*2,y*2,2,2))
-        pygame.display.flip(); self.clock.tick(60)
+        if lcdc & 0x02:
+            self._draw_sprites(ly, lcdc, line, bg_colors)
+
+        self.framebuffer[ly] = line
+
+    def _draw_sprites(self, ly, lcdc, line, bg_colors):
+        mem = self.memory.memory
+        height = 16 if lcdc & 0x04 else 8
+        # Al massimo 10 sprite per linea, in ordine di OAM
+        sprites = []
+        for i in range(0xFE00, 0xFEA0, 4):
+            sy = mem[i] - 16
+            if sy <= ly < sy + height:
+                sprites.append((mem[i + 1] - 8, i))
+                if len(sprites) == 10:
+                    break
+        # Priorità DMG: X minore vince, a parità vince l'indice OAM minore.
+        # Disegniamo dal meno prioritario al più prioritario.
+        sprites.sort(key=lambda s: (s[0], s[1]), reverse=True)
+        pal0 = self._palette(mem[0xFF48])
+        pal1 = self._palette(mem[0xFF49])
+        for sx, i in sprites:
+            sy = mem[i] - 16
+            tile = mem[i + 2]
+            attr = mem[i + 3]
+            row = ly - sy
+            if attr & 0x40:
+                row = height - 1 - row
+            if height == 16:
+                tile &= 0xFE
+            addr = 0x8000 + tile * 16 + row * 2
+            lo, hi = mem[addr], mem[addr + 1]
+            pal = pal1 if attr & 0x10 else pal0
+            behind_bg = attr & 0x80
+            for col in range(8):
+                x = sx + col
+                if not 0 <= x < self.SCREEN_WIDTH:
+                    continue
+                bit = col if attr & 0x20 else 7 - col
+                cn = ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1)
+                if cn == 0:
+                    continue
+                if behind_bg and bg_colors[x] != 0:
+                    continue
+                line[x] = pal[cn]
+
+    def frame_rgb(self):
+        """Frame corrente come array RGB (altezza, larghezza, 3)."""
+        if not self.memory.memory[0xFF40] & 0x80:
+            return np.broadcast_to(self.COLORS[0], (self.SCREEN_HEIGHT, self.SCREEN_WIDTH, 3))
+        return self.COLORS[self.framebuffer]
+
+    def render_screen(self, limit_fps=True):
+        self.frame_ready = False
+        if self.headless:
+            return
+        pygame.surfarray.blit_array(self.surface, self.frame_rgb().transpose(1, 0, 2))
+        pygame.transform.scale(self.surface, self.screen.get_size(), self.screen)
+        pygame.display.flip()
+        if limit_fps:
+            self.clock.tick(60)

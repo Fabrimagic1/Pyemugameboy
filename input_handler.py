@@ -1,34 +1,32 @@
 import pygame
 
+# Tasto -> (gruppo, bit). Gruppo 0 = pulsanti, 1 = direzioni
+KEY_MAP = {
+    pygame.K_z: (0, 0),          # A
+    pygame.K_x: (0, 1),          # B
+    pygame.K_BACKSPACE: (0, 2),  # Select
+    pygame.K_RETURN: (0, 3),     # Start
+    pygame.K_RIGHT: (1, 0),
+    pygame.K_LEFT: (1, 1),
+    pygame.K_UP: (1, 2),
+    pygame.K_DOWN: (1, 3),
+}
+
+
 class InputHandler:
+    """Legge gli eventi di pygame e aggiorna lo stato del joypad in memoria.
+    update() restituisce False quando l'utente chiude la finestra."""
+
     def __init__(self, memory):
         self.memory = memory
-        self.keys = set()
 
     def update(self):
         for event in pygame.event.get():
-            if event.type==pygame.QUIT:
-                pygame.quit(); exit()
-            if event.type==pygame.KEYDOWN:
-                self.keys.add(event.key)
-            if event.type==pygame.KEYUP and event.key in self.keys:
-                self.keys.remove(event.key)
-        joy = self.memory.read_byte(0xFF00)
-        rb = not bool(joy&0x20)
-        rd = not bool(joy&0x10)
-        res = 0x0F
-        if rb:
-            if pygame.K_z in self.keys: res&=~1
-            if pygame.K_x in self.keys: res&=~2
-            if pygame.K_BACKSPACE in self.keys: res&=~4
-            if pygame.K_RETURN in self.keys: res&=~8
-        if rd:
-            if pygame.K_RIGHT in self.keys: res&=~1
-            if pygame.K_LEFT in self.keys: res&=~2
-            if pygame.K_UP in self.keys: res&=~4
-            if pygame.K_DOWN in self.keys: res&=~8
-        # set interrupt Joypad if pressed
-        if res != (joy&0x0F):
-            flags = self.memory.read_byte(0xFF0F)
-            self.memory.write_byte(0xFF0F, flags|0x10)
-        self.memory.write_byte(0xFF00, (joy&0xF0)|res)
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return False
+            if event.type in (pygame.KEYDOWN, pygame.KEYUP) and event.key in KEY_MAP:
+                group, bit = KEY_MAP[event.key]
+                self.memory.set_joypad(group, bit, event.type == pygame.KEYDOWN)
+        return True
