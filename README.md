@@ -23,7 +23,10 @@ page discards it together with any in-game saves.
 - **Sound**
   - Browser: all four channels (two square waves with sweep and envelope, wave, noise) with stereo mixing
   - Desktop: square channels 1 and 2 with length and envelope (runs silently without an audio device)
-- **Saves**: battery-backed RAM is written to a `.sav` file next to the ROM (desktop version only)
+- **Saves**
+  - Desktop: battery-backed RAM is written to a `.sav` file next to the ROM
+  - Browser: **Salva stato** downloads a `.gbstate` file with the exact moment of the game (including
+    the in-game save); load the same ROM later and use **Carica stato** to continue from there
 
 ## Controls
 
