@@ -137,6 +137,17 @@
   .ab { display: flex; gap: 12px; justify-content: flex-end; }
   .ab button { width: 56px; height: 56px; border-radius: 50%; }
   .ab .b { margin-top: 24px; }
+  .mute {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font: inherit;
+    font-size: .85rem;
+    padding: 1px 8px;
+    margin-left: 8px;
+    cursor: pointer;
+  }
   .help { color: var(--muted); font-size: .9rem; margin-top: 20px; }
   .help kbd {
     border: 1px solid var(--border);
@@ -150,17 +161,20 @@
 <body>
 <main>
   <h1>PyEmu Game Boy</h1>
-  <p class="sub">L'emulatore Python del repository, eseguito nel browser con Pyodide.</p>
+  <p class="sub">Emulatore Game Boy nel browser, con audio. Versione JavaScript dell'emulatore Python del repository.</p>
 
   <div class="panel">
     <div class="drop" id="drop">
-      <button class="file-btn" id="pick" disabled>Carica ROM</button>
+      <button class="file-btn" id="pick">Carica ROM</button>
       <input type="file" id="file" accept=".gb,.gbc,.bin">
-      <span class="status" id="status">Caricamento di Python in corso…</span>
+      <span class="status" id="status">Scegli un file .gb oppure trascinalo qui.</span>
     </div>
 
     <canvas id="screen" width="160" height="144"></canvas>
-    <div class="bar"><span id="title"></span><span id="fps"></span></div>
+    <div class="bar">
+      <span id="title"></span>
+      <span><span id="fps"></span> <button class="mute" id="mute" aria-pressed="false">Audio: sì</button></span>
+    </div>
 
     <div class="pad">
       <div class="dpad">
@@ -188,6 +202,7 @@
   </p>
 </main>
 
+<script src="gb.js"></script>
 <script>
   const statusEl = document.getElementById("status");
   const titleEl = document.getElementById("title");
@@ -195,46 +210,109 @@
   const pick = document.getElementById("pick");
   const fileInput = document.getElementById("file");
   const drop = document.getElementById("drop");
+  const muteBtn = document.getElementById("mute");
   const ctx = document.getElementById("screen").getContext("2d");
   const image = ctx.createImageData(160, 144);
+  const pixels = new Uint32Array(image.data.buffer);
 
-  const worker = new Worker("worker.js");
-  let ready = false;
+  let gb = null;
+  let lastFrame = -1;
+  let muted = false;
 
   function setStatus(text, isError) {
     statusEl.textContent = text;
     statusEl.classList.toggle("error", !!isError);
   }
 
-  worker.onmessage = (e) => {
-    const msg = e.data;
-    if (msg.type === "ready") {
-      ready = true;
-      pick.disabled = false;
-      setStatus("Pronto. Scegli un file .gb oppure trascinalo qui.");
-    } else if (msg.type === "loaded") {
-      titleEl.textContent = msg.title || "ROM senza titolo";
-      setStatus("In esecuzione.");
-    } else if (msg.type === "frame") {
-      image.data.set(msg.pixels);
-      ctx.putImageData(image, 0, 0);
-    } else if (msg.type === "fps") {
-      fpsEl.textContent = `${msg.fps.toFixed(0)} fps`;
-    } else if (msg.type === "error") {
-      setStatus("Errore: " + msg.message, true);
-      console.error(msg.message);
+  // ---------------- Audio (AudioWorklet con coda di campioni) ----------------
+  const WORKLET = `
+    class GBOut extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.queue = [];
+        this.cur = null;
+        this.pos = 0;
+        this.queued = 0;
+        this.port.onmessage = (e) => {
+          if (e.data === "clear") { this.queue = []; this.cur = null; this.queued = 0; return; }
+          this.queue.push(e.data);
+          this.queued += e.data.length / 2;
+          // Limita la latenza: scarta i blocchi più vecchi oltre ~150 ms
+          while (this.queued > sampleRate * 0.15 && this.queue.length > 1) {
+            this.queued -= this.queue.shift().length / 2;
+          }
+        };
+      }
+      process(inputs, outputs) {
+        const out = outputs[0], L = out[0], R = out[1] || out[0];
+        for (let i = 0; i < L.length; i++) {
+          if (!this.cur || this.pos >= this.cur.length) {
+            this.cur = this.queue.shift() || null;
+            this.pos = 0;
+            if (!this.cur) { L[i] = R[i] = 0; continue; }
+            this.queued -= this.cur.length / 2;
+          }
+          L[i] = this.cur[this.pos++];
+          R[i] = this.cur[this.pos++];
+        }
+        return true;
+      }
     }
-  };
-  worker.onerror = (e) => setStatus("Errore: " + e.message, true);
+    registerProcessor("gb-out", GBOut);
+  `;
+  let audioCtx = null;
+  let audioNode = null;
 
-  async function loadFile(file) {
-    if (!file || !ready) return;
-    setStatus(`Avvio di ${file.name}…`);
-    const data = await file.arrayBuffer();
-    worker.postMessage({ type: "rom", data }, [data]);
+  async function initAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return;
+    }
+    try {
+      audioCtx = new AudioContext({ latencyHint: "interactive" });
+      const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
+      await audioCtx.audioWorklet.addModule(url);
+      audioNode = new AudioWorkletNode(audioCtx, "gb-out", { outputChannelCount: [2] });
+      audioNode.connect(audioCtx.destination);
+    } catch (err) {
+      console.warn("Audio non disponibile:", err);
+      audioCtx = null;
+      audioNode = null;
+    }
   }
 
-  pick.addEventListener("click", () => fileInput.click());
+  function onSamples(buf) {
+    if (audioNode && !muted) audioNode.port.postMessage(buf, [buf.buffer]);
+  }
+
+  muteBtn.addEventListener("click", () => {
+    muted = !muted;
+    muteBtn.textContent = muted ? "Audio: no" : "Audio: sì";
+    muteBtn.setAttribute("aria-pressed", String(muted));
+    if (muted && audioNode) audioNode.port.postMessage("clear");
+    initAudio();
+  });
+
+  // ---------------- Caricamento ROM (solo in memoria) ----------------
+  async function loadFile(file) {
+    if (!file) return;
+    await initAudio();
+    try {
+      const rom = new Uint8Array(await file.arrayBuffer());
+      gb = new GameBoy(rom, {
+        sampleRate: audioCtx ? audioCtx.sampleRate : 48000,
+        onSamples,
+      });
+      lastFrame = -1;
+      titleEl.textContent = gb.title() || file.name;
+      setStatus(audioCtx ? "In esecuzione." : "In esecuzione (audio non disponibile).");
+    } catch (err) {
+      gb = null;
+      setStatus("Errore: " + err.message, true);
+    }
+  }
+
+  pick.addEventListener("click", () => { initAudio(); fileInput.click(); });
   fileInput.addEventListener("change", () => {
     loadFile(fileInput.files[0]);
     fileInput.value = "";
@@ -247,18 +325,46 @@
     loadFile(e.dataTransfer.files[0]);
   });
 
+  // ---------------- Ciclo principale a tempo reale ----------------
+  let lastTime = performance.now();
+  let fpsCount = 0;
+  let fpsStart = lastTime;
+  function tick(now) {
+    // Recupera al massimo 100 ms (es. dopo un cambio di scheda)
+    const dt = Math.min(now - lastTime, 100);
+    lastTime = now;
+    if (gb && !document.hidden) {
+      gb.runCycles(dt / 1000 * CLOCK_HZ);
+      if (gb.ppu.frameCount !== lastFrame) {
+        if (lastFrame >= 0) fpsCount += gb.ppu.frameCount - lastFrame;
+        lastFrame = gb.ppu.frameCount;
+        pixels.set(gb.ppu.display);
+        ctx.putImageData(image, 0, 0);
+      }
+    }
+    if (now - fpsStart >= 1000) {
+      fpsEl.textContent = gb ? `${Math.round(fpsCount * 1000 / (now - fpsStart))} fps` : "";
+      fpsCount = 0;
+      fpsStart = now;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------------- Input ----------------
   // Tasto -> [gruppo, bit] come in input_handler.py
   const KEYS = {
     KeyZ: [0, 0], KeyX: [0, 1], Backspace: [0, 2], Enter: [0, 3],
     ArrowRight: [1, 0], ArrowLeft: [1, 1], ArrowUp: [1, 2], ArrowDown: [1, 3],
   };
   function sendKey(group, bit, pressed) {
-    worker.postMessage({ type: "key", group, bit, pressed });
+    if (gb) gb.setKey(group, bit, pressed);
   }
   function onKey(e, pressed) {
     const k = KEYS[e.code];
-    if (!k || e.target === fileInput) return;
+    if (!k) return;
     e.preventDefault();
+    if (pressed) initAudio();
     if (!e.repeat) sendKey(k[0], k[1], pressed);
   }
   window.addEventListener("keydown", (e) => onKey(e, true));
@@ -267,26 +373,25 @@
   // Pulsanti a schermo (mouse e touch)
   document.querySelectorAll(".pad button").forEach((btn) => {
     const g = +btn.dataset.g, b = +btn.dataset.b;
-    const press = (e) => {
+    btn.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      initAudio();
       btn.setPointerCapture?.(e.pointerId);
       btn.classList.add("down");
       sendKey(g, b, true);
-    };
-    const release = (e) => {
+    });
+    const release = () => {
       if (!btn.classList.contains("down")) return;
       btn.classList.remove("down");
       sendKey(g, b, false);
     };
-    btn.addEventListener("pointerdown", press);
     btn.addEventListener("pointerup", release);
     btn.addEventListener("pointercancel", release);
     btn.addEventListener("contextmenu", (e) => e.preventDefault());
   });
 
-  // In pausa quando la scheda non è visibile
   document.addEventListener("visibilitychange", () => {
-    worker.postMessage({ type: document.hidden ? "pause" : "resume" });
+    if (document.hidden && audioNode) audioNode.port.postMessage("clear");
   });
 </script>
 </body>

@@ -37,19 +37,20 @@ python main.py roms/pokemon_red.gb
 
 ## Browser version (temporary ROMs)
 
-The `web/` folder runs the same Python emulator in the browser through [Pyodide](https://pyodide.org).
+The `web/` folder contains a browser version: <https://fabrimagic1.github.io/Pyemugameboy/>.
+It is a JavaScript port of the Python modules (`web/gb.js`), so it runs at full speed (60 FPS)
+and has complete sound (both square channels with sweep/envelope, wave and noise channels, stereo panning).
+
 You pick a ROM file from your computer: it stays only in the memory of that browser tab, is never
 uploaded to a server and is never saved. Closing or reloading the page discards the ROM and any
 in-game saves.
 
-The page must be served over HTTP (Web Workers don't run from `file://`). From the project root:
+To run it locally, serve the folder over HTTP from the project root:
 ```bash
 python -m http.server 8000
 ```
 Then open <http://localhost:8000/web/> and press **Carica ROM** (or drag a `.gb` file onto the page).
 Keyboard controls are the same as the desktop version; on-screen buttons work with mouse and touch.
-The same folder also works on GitHub Pages if Pages is enabled for the repository root.
-Sound is not available in the browser version.
 
 ## Project Structure
 
@@ -62,7 +63,7 @@ Sound is not available in the browser version.
 ├── timer.py           # DIV/TIMA timer with interrupt generation
 ├── apu.py             # Basic Audio Processing Unit (square wave channel)
 ├── input_handler.py   # Keyboard-to-joypad mapping and Joypad interrupt
-├── web/               # Browser version (Pyodide): index.html, worker.js, emu_web.py
+├── web/               # Browser version: index.html and gb.js (JavaScript port with full APU)
 ├── roms/              # Folder for your ROM files
 ├── requirements.txt   # Python dependencies
 └── README.md          # This documentation
