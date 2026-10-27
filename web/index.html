@@ -101,6 +101,7 @@
     cursor: pointer;
   }
   .state-btn:disabled { opacity: .4; cursor: default; }
+  .status a { color: var(--accent); font-weight: 600; }
   .status { color: var(--muted); font-size: .95rem; flex: 1; min-width: 180px; }
   canvas {
     display: block;
@@ -228,7 +229,8 @@
   </p>
 </main>
 
-<script src="gb.js"></script>
+<!-- Il parametro di versione obbliga il browser a non usare una copia vecchia in cache -->
+<script src="gb.js?v=3"></script>
 <script>
   const statusEl = document.getElementById("status");
   const titleEl = document.getElementById("title");
@@ -345,19 +347,39 @@
   const loadStateBtn = document.getElementById("loadState");
   const stateInput = document.getElementById("stateFile");
 
+  let stateUrl = null;
+
   function saveState() {
-    if (!gb) return;
-    const blob = new Blob([JSON.stringify(gb.saveState())], { type: "application/json" });
-    const stamp = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
-    const name = (gb.title() || "gioco").replace(/[^\w-]+/g, "_");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${name}_${stamp}.gbstate`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    setStatus("Stato salvato: " + a.download);
+    if (!gb) {
+      setStatus("Carica prima una ROM.", true);
+      return;
+    }
+    try {
+      if (typeof gb.saveState !== "function") {
+        throw new Error("la pagina usa una versione vecchia dell'emulatore: ricaricala con Ctrl+F5");
+      }
+      const blob = new Blob([JSON.stringify(gb.saveState())], { type: "application/octet-stream" });
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
+      const name = `${(gb.title() || "gioco").replace(/[^\w-]+/g, "_")}_${stamp}.gbstate`;
+      if (stateUrl) URL.revokeObjectURL(stateUrl);
+      stateUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = stateUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Link di riserva per i browser che bloccano il download automatico
+      const link = document.createElement("a");
+      link.href = stateUrl;
+      link.download = name;
+      link.textContent = "tocca qui";
+      statusEl.classList.remove("error");
+      statusEl.replaceChildren(`Stato salvato: ${name}. Se il download non è partito, `, link, ".");
+    } catch (err) {
+      console.error(err);
+      setStatus("Errore nel salvataggio: " + err.message, true);
+    }
   }
 
   async function loadStateFile(file) {
