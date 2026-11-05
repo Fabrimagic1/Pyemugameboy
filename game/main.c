@@ -317,11 +317,23 @@ static void rbox(u8 x0, u8 y0, u8 x1, u8 y1) {
             if (!((y == y0 || y == y1) && x == x1)) hm[y][x] = 1;
 }
 
+static void eell(u8 cy, u8 rx, u8 ry, u8 col) {
+    s8 dy;
+    u8 x;
+    for (dy = -(s8)ry; dy <= (s8)ry; dy++) {
+        u8 ad = dy < 0 ? -dy : dy;
+        u8 w = (u8)((u16)rx * CIRC[(u8)((u16)ad * 16 / ry)] / 32);
+        s8 yy = cy + dy;
+        if (yy < 0 || yy > 47) continue;
+        for (x = 0; x < w; x++) ho[yy][x] = col;
+    }
+}
+
 static void gen_sprite(u8 sp, u8 base) {
     u8 el = FAM_EL[sp / 3], fam = sp / 3, stg = sp % 3;
     u8 bx = 0, by = 33, bh = 0, ey = 14, ex = 3;
-    u8 top = 0, wx = 0, pal, hl, bc, pat, fs, ms;
-    u8 y, x, ty, tx, i, cx0;
+    u8 top = 0, ht = 0, wx = 0, pal, hl, bc, pat, fs, ms;
+    u8 y, x, ty, tx, i, cx0, dec = (fam != 7 && fam != 8 && fam != 4);
     sg = 0x9E37 ^ ((u16)el * 977 + fam * 131 + 7);
     sgr(); sgr();
     for (y = 0; y < 48; y++) for (x = 0; x < 24; x++) hm[y][x] = 0;
@@ -330,7 +342,7 @@ static void gen_sprite(u8 sp, u8 base) {
     switch (fam) {
     case 0: /* tondo */
         blob(0, 30, 11 + stg * 2 + cx0, 10 + stg * 2 + cx0);
-        blob(5, 44, 5, 4); blob(13 + stg, 30, 4, 6);
+        blob(6, 43, 5, 4); blob(13 + stg, 30, 4, 6);
         bx = 7; bh = 8; ey = 24; ex = 4; break;
     case 1: /* bipede */
         blob(0, 32, 8 + stg, 9 + stg); blob(0, 14, 8 + stg / 2, 7); blob(0, 21, 5, 4);
@@ -345,30 +357,34 @@ static void gen_sprite(u8 sp, u8 base) {
         blob(10, 45, 4, 3); blob(4, 45, 3, 3); blob(16, 36, 3, 5);
         bx = 8; by = 38; bh = 6; ey = 20; ex = 3; break;
     case 4: /* uccello */
-        blob(0, 32, 10 + stg, 11); blob(0, 14, 7, 6); blob(0, 20, 5, 4); blob(0, 18, 3, 3);
-        blob(14 + stg, 30, 4, 10 + stg); blob(4, 45, 3, 3); blob(0, 7, 2, 4 + stg * 2);
-        bx = 6; by = 35; bh = 8; ey = 12; ex = 3; break;
+        blob(0, 32, 10 + stg, 11); blob(0, 15, 9 + stg / 2, 8); blob(0, 24, 8, 5); blob(0, 21, 4, 3);
+        blob(14 + stg, 31, 4, 10 + stg); blob(5, 45, 3, 3); blob(0, 8, 2, 4 + stg * 2);
+        bx = 6; by = 35; bh = 8; ey = 12; ex = 3; ht = 9; ey = 13; break;
     case 5: /* insetto */
         blob(0, 13, 9 + stg, 8); blob(0, 22, 4, 3); blob(0, 29, 7, 7); blob(0, 41, 6 + stg, 6);
         blob(5, 3, 1, 5); blob(9, 26, 4, 2); blob(10, 33, 5, 2); blob(9, 40, 4, 2);
-        ey = 11; ex = 4; break;
+        ey = 11; ex = 4; ht = 6; break;
     case 6: /* pesce / lumaca */
         blob(0, 31, 16, 9 + stg); blob(0, 19, 3, 6 + stg); blob(0, 44, 8, 4);
         blob(16, 30, 3, 4);
         bx = 9; by = 34; bh = 6; ey = 26; ex = 5; break;
-    case 7: /* golem */
-        rbox(0, 10, 6 + stg, 21); rbox(0, 22, 11 + stg, 38); rbox(12 + stg, 22, 15 + stg, 36);
-        blob(14 + stg, 40, 4, 4); rbox(2, 39, 8, 46);
-        bx = 5; by = 30; bh = 6; ey = 14; ex = 2; break;
-    case 8: /* sfera fluttuante */
-        blob(0, 23, 12 + stg * 2, 12 + stg);
-        blob(3, 41, 2, 7); blob(8, 40, 2, 7); blob(13, 37, 2, 5);
+    case 7: /* golem: blocchi di pietra separati da giunture */
+        rbox(0, 7, 5 + stg, 18); rbox(0, 20, 9 + stg, 35);
+        rbox(10 + stg, 17, 15 + stg, 25); rbox(11 + stg, 26, 16 + stg, 38);
+        rbox(11 + stg, 39, 17 + stg, 45); rbox(1, 37, 7, 46);
+        bx = 4; by = 27; bh = 5; ey = 11; ex = 1; break;
+    case 8: /* sfera fluttuante con occhio gigante e satelliti */
+        blob(0, 22, 13 + stg, 13 + stg);
+        blob(3, 40, 2, 8); blob(8, 38, 2, 8); blob(12, 33, 2, 7);
+        blob(18, 8, 2, 2); blob(20, 18, 1 + (stg > 0), 2);
+        if (stg > 0) blob(19, 30, 2, 2);
+        if (stg > 1) { blob(16, 3, 2, 2); blob(21, 25, 1, 1); }
         ey = 21; ex = 0; break;
     default: /* drago */
-        blob(0, 19, 4, 10); blob(0, 11, 7, 6); blob(0, 15, 4, 4);
-        blob(12, 29, 6 + stg, 11 + stg); blob(0, 35, 10, 9); blob(9, 45, 4, 3);
-        blob(5, 6, 2, 6);
-        bx = 6; by = 37; bh = 8; ey = 10; ex = 2; break;
+        blob(0, 22, 4, 9); blob(0, 14, 7, 6); blob(0, 18, 4, 4);
+        blob(11, 27, 5 + stg, 10 + stg); blob(0, 35, 9, 9); blob(8, 45, 4, 3);
+        blob(6, 8, 2, 6); blob(10, 40, 3, 3);
+        bx = 6; by = 37; bh = 8; ey = 13; ex = 2; break;
     }
     /* limiti del corpo */
     for (y = 0; y < 48; y++)
@@ -378,20 +394,21 @@ static void gen_sprite(u8 sp, u8 base) {
                 if (x > wx && y > 16 && y < 40) wx = x;
             }
     top = top ? top - 1 : 0;
+    if (!ht) ht = top;
     /* tratti dell'elemento (ancorati al corpo) */
     if (el == 0) {
-        blob(4, top + 2, 3, 7 + stg * 2); blob(wx - 2, 22, 5, 4 + stg); blob(wx - 4, 38, 4, 3);
+        blob(4, ht + 2, 3, 7 + stg * 2 > ht + 2 ? ht + 2 : 7 + stg * 2); if (dec) { blob(wx - 2, 22, 5, 4 + stg); blob(wx - 4, 38, 4, 3); }
     } else if (el == 1) {
-        blob(wx, 28, 3, 8 + stg * 2); blob(0, top + 1, 3, 6 + stg * 2); blob(wx - 3, 42, 3, 4);
+        if (dec) { blob(wx, 28, 3, 8 + stg * 2); blob(wx - 3, 42, 3, 4); } blob(0, ht + 1, 3, 6 + stg * 2 > ht + 1 ? ht + 1 : 6 + stg * 2);
     } else if (el == 2) {
-        blob(0, top + 1, 3, 8 + stg * 3); blob(5, top + 3, 2, 6 + stg * 2); blob(wx - 1, 40, 3, 7 + stg * 2);
+        blob(0, ht + 1, 3, 8 + stg * 3 > ht + 1 ? ht + 1 : 8 + stg * 3); blob(4, ht + 3, 2, 6 + stg * 2); if (dec) blob(wx - 1, 40, 3, 7 + stg * 2);
     } else {
-        blob(wx + 3, 20, 5 + stg, 10 + stg * 2); blob(wx + 2, 36, 4, 4 + stg);
-        blob(2, top, 2, 6);
+        if (dec && fam != 9) { blob(wx + 3, 20, 5 + stg, 10 + stg * 2); blob(wx + 2, 36, 4, 4 + stg); }
+        if (dec) blob(2, ht, 2, 6);
     }
     /* evoluzione: spuntoni e corna in piu' */
-    if (stg > 0) { blob(wx - 1, 24, 3, 4); blob(7, top + 1, 2, 5); }
-    if (stg > 1) { blob(wx + 1, 18, 3, 6); blob(10, top + 4, 2, 7); blob(2, top - 1, 2, 5); }
+    if (stg > 0) { if (dec) blob(wx - 1, 24, 3, 4); blob(7 - (!dec) * 3, ht + 1, 2, 5); }
+    if (stg > 1) { if (dec) blob(wx + 1, 18, 3, 6); blob(10 - (!dec) * 6, ht + 4, 2, 7); blob(2, ht - 1, 2, 5); }
     /* colori del corpo */
     pal = (fam + el) % 3;
     hl = pal == 1 ? 1 : 0;
@@ -415,7 +432,7 @@ static void gen_sprite(u8 sp, u8 base) {
                 col = pal == 0 ? 2 : ((x + y) & 1 ? 3 : 2);
             if (el == 0 && ((x * 3 + y * 5 + fam) % 17) == 0) col = 2;
             else if (el == 2 && y < top + 14 && ((x + y) & 3) == 0) col = hl;
-            else if (el == 3 && ((x + y) % 9) == 0) col = hl;
+            else if (el == 3 && fam != 8 && ((x + y) % 9) == 0) col = hl;
             ho[y][x] = col;
         }
     /* pancia chiara ellittica con righe */
@@ -430,19 +447,33 @@ static void gen_sprite(u8 sp, u8 base) {
                     ho[yy][x] = (dy > 0 && !(dy & 3)) ? 1 : 0;
         }
     }
+    if (fam == 7) {
+        for (x = 0; x <= 5 + stg; x++) ho[19][x] = 3;
+        for (x = 0; x <= 9 + stg; x++) ho[36][x] = 3;
+        for (y = 37; y < 47; y++) ho[y][0] = 3;
+        for (y = 20; y < 36; y++) ho[y][9 + stg] = 3;
+        for (y = 41; y < 44; y++) for (x = 12 + stg; x < 17 + stg; x++) if (ho[y][x] != 3 && (y & 1)) ho[y][x] = 3;
+        for (y = 22; y < 35; y += 2) { ho[y][(y * 3) % 5 + 6] = 0; ho[y + 1][(y * 3) % 5 + 7] = 0; }
+    }
     /* faccia: occhi (4 stili) e bocca (3 stili) */
     fs = (fam + el + (fam >> 1)) & 3;
     ms = (fam + stg) % 3;
     if (fam == 8) fs = 2;
-    if (fs == 2) {                     /* ciclope */
+    if (fam == 8) {
+        eell(ey, 9, 8, 3);
+        eell(ey, 8, 7, 0);
+        eell(ey + 1, 5, 5, 3);
+        rect(ey - 1, 1, 2, 2, 0);
+        rect(ey + 7, 0, 1, 6, 3);
+    } else if (fs == 2) {                     /* ciclope */
         rect(ey - 1, 0, 5, 5, 0);
         rect(ey, 0, 3, 3, 3);
         ho[ey + 1][0] = 0;
         rect(ey - 2, 0, 1, 5, 3);
     } else if (fs == 0) {              /* occhi tondi */
-        rect(ey - 1, ex, 4, 4, 0);
-        rect(ey, ex, 3, 2, 3);
-        ho[ey][ex] = 0;
+        rect(ey - 1, ex, 5, 5, 0);
+        rect(ey, ex + 1, 3, 3, 3);
+        ho[ey][ex + 1] = 0;
     } else if (fs == 1) {              /* occhi arrabbiati */
         rect(ey, ex, 3, 4, 0);
         rect(ey + 1, ex + 1, 2, 2, 3);
