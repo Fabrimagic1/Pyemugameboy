@@ -37,10 +37,10 @@ export const BIOME_SLOTS = [
 export const BIOMES = {
   shore: {
     name: 'Spiaggia',
-    length: [105, 125], beach: 34,
-    steps: { count: [3, 4], cliff: [2.5, 6], angle: [62, 72], slope: [3, 8] },
+    length: [70, 85], beach: 28,
+    steps: { count: [3, 4], cliff: [3, 7], angle: [64, 74], slope: [4, 10] },
     passages: { count: [2, 3], weights: { ramp: 3, stairs: 1, gully: 1 } },
-    notches: 0.004,
+    notches: 0.0060,
     temperature: 0,
     sky: { top: '#4f9be0', bottom: '#cde8fb', fog: '#c4e2f6', far: 620 },
     palette: { wall: '#8f8270', wall2: '#6f6455', ledge: '#cdbb88' },
@@ -60,10 +60,10 @@ export const BIOMES = {
 
   jungle: {
     name: 'Giungla',
-    length: [150, 180],
-    steps: { count: [4, 6], cliff: [6, 13], angle: [70, 80], slope: [4, 12] },
+    length: [85, 105],
+    steps: { count: [5, 7], cliff: [8, 15], angle: [70, 80], slope: [6, 14] },
     passages: { count: [2, 3], weights: { ramp: 0.6, stairs: 1, gully: 3 } },
-    notches: 0.004,
+    notches: 0.0060,
     temperature: 0.15,
     sky: { top: '#3d8fcf', bottom: '#bfe3d0', fog: '#a3d1b5', far: 300 },
     palette: { wall: '#5d5a48', wall2: '#454536', ledge: '#4f8a35' },
@@ -84,10 +84,10 @@ export const BIOMES = {
 
   fungal: {
     name: 'Bosco dei Funghi',
-    length: [150, 180],
-    steps: { count: [4, 6], cliff: [5, 11], angle: [72, 82], slope: [3, 10] },
+    length: [85, 105],
+    steps: { count: [5, 7], cliff: [7, 13], angle: [72, 82], slope: [5, 12] },
     passages: { count: [2, 3], weights: { ramp: 0.8, stairs: 3, gully: 1 } },
-    notches: 0.006,
+    notches: 0.0090,
     temperature: 0.1,
     sky: { top: '#5a6fb8', bottom: '#d6c6e8', fog: '#b9a9d6', far: 280 },
     palette: { wall: '#5b4e5e', wall2: '#463c4a', ledge: '#8a6d9c' },
@@ -104,11 +104,11 @@ export const BIOMES = {
 
   alpine: {
     name: 'Ghiacciaio',
-    length: [140, 170],
+    length: [80, 100],
     // poche pareti ma alte, e pochi passaggi: qui il validatore lavora di più
-    steps: { count: [3, 5], cliff: [12, 22], angle: [72, 82], slope: [10, 18] },
-    passages: { count: [1, 2], weights: { ramp: 1, stairs: 2, gully: 1 } },
-    notches: 0.0015,
+    steps: { count: [4, 6], cliff: [12, 20], angle: [72, 82], slope: [12, 20] },
+    passages: { count: [2, 3], weights: { ramp: 1, stairs: 2, gully: 1 } },
+    notches: 0.0022,
     temperature: -1,
     sky: { top: '#6d8fb3', bottom: '#e3edf5', fog: '#dbe6ef', far: 260 },
     palette: { wall: '#6c727c', wall2: '#50555e', ledge: '#eef3f7' },
@@ -128,11 +128,11 @@ export const BIOMES = {
 
   mesa: {
     name: 'Altopiano Rosso',
-    length: [150, 180],
+    length: [85, 105],
     // tante pareti basse e verticali (strati di arenaria), pianori quasi piatti
-    steps: { count: [6, 8], cliff: [6, 10], angle: [78, 84], slope: [1, 4] },
+    steps: { count: [7, 9], cliff: [7, 11], angle: [78, 84], slope: [2, 6] },
     passages: { count: [2, 3], weights: { ramp: 1.5, stairs: 1, gully: 1 } },
-    notches: 0.002,
+    notches: 0.0030,
     temperature: 1,
     sky: { top: '#4a8fd6', bottom: '#f6d9a8', fog: '#efcf9f', far: 380 },
     palette: {
@@ -152,10 +152,10 @@ export const BIOMES = {
 
   caldera: {
     name: 'Caldera',
-    length: [115, 140],
-    steps: { count: [3, 4], cliff: [8, 16], angle: [68, 78], slope: [8, 15] },
+    length: [70, 90],
+    steps: { count: [4, 5], cliff: [10, 18], angle: [68, 78], slope: [10, 16] },
     passages: { count: [2, 3], weights: { ramp: 0.8, stairs: 1, gully: 2 } },
-    notches: 0.003,
+    notches: 0.0045,
     temperature: 0.7,
     sky: { top: '#3b2f3a', bottom: '#c96f45', fog: '#7a4a3c', far: 240 },
     palette: { wall: '#3a3433', wall2: '#262222', ledge: '#5a4a44' },
@@ -178,10 +178,10 @@ export const BIOMES = {
 
   summit: {
     name: 'Vetta',
-    length: [75, 95],
-    steps: { count: [3, 4], cliff: [8, 14], angle: [70, 80], slope: [16, 26] },
-    passages: { count: [2, 2], weights: { ramp: 1, stairs: 2, gully: 1 } },
-    notches: 0.003,
+    length: [55, 70],
+    steps: { count: [3, 4], cliff: [10, 16], angle: [70, 80], slope: [20, 28] },
+    passages: { count: [2, 3], weights: { ramp: 1, stairs: 2, gully: 1 } },
+    notches: 0.0045,
     temperature: -0.8,
     sky: { top: '#1f4f8f', bottom: '#bcd3ea', fog: '#c9d8e8', far: 380 },
     palette: { wall: '#7a7f88', wall2: '#5c6068', ledge: '#eef3f7' },

@@ -46,8 +46,8 @@ function buildLayout(rng) {
     const def = BIOMES[id], st = def.steps;
     const last = index === BIOME_SLOTS.length - 1;
     let L = rng.range(def.length[0], def.length[1]);
-    const startFlat = index === 0 ? def.beach : 12;
-    const endFlat = last ? 14 : 26;           // il pianoro del falò
+    const startFlat = index === 0 ? def.beach : 9;
+    const endFlat = last ? 14 : 20;           // il pianoro del falò
     const n = rng.int(st.count[0], st.count[1]);
     const cliffs = [];
     let run = 0;
@@ -56,7 +56,7 @@ function buildLayout(rng) {
       const r = Hc / Math.tan(rng.range(st.angle[0], st.angle[1]) * DEG);
       cliffs.push({ Hc, run: r }); run += r;
     }
-    L = Math.max(L, startFlat + endFlat + run + (n - 1) * 10);
+    L = Math.max(L, startFlat + endFlat + run + (n - 1) * 7);
     const floorTotal = L - startFlat - endFlat - run;
     const w = Array.from({ length: Math.max(1, n - 1) }, () => rng.range(0.6, 1.4));
     const ws = w.reduce((a, b) => a + b, 0);
@@ -268,8 +268,8 @@ function placeCampfires(ctx, rng) {
   for (const sec of S.slice(0, -1)) {
     const x = rng.range(-1, 1) * ctx.halfWidth(sec.fireZ) * 0.35;
     const level = ctx.profile(sec.fireZ);
-    ctx.stamps.add({ kind: 'flat', tag: 'campfire', x, zp: sec.fireZ, level, r: 9, safe: true,
-      xmin: x - 9, xmax: x + 9, zmin: sec.fireZ - 9, zmax: sec.fireZ + 9 });
+    ctx.stamps.add({ kind: 'flat', tag: 'campfire', x, zp: sec.fireZ, level, r: 8, safe: true,
+      xmin: x - 8, xmax: x + 8, zmin: sec.fireZ - 8, zmax: sec.fireZ + 8 });
     fires.push({ index: sec.index, x, zp: sec.fireZ, level, section: sec.index });
   }
   const last = S[S.length - 1];
@@ -290,7 +290,7 @@ function placePassages(ctx, rng) {
       const xs = [];
       for (let t = 0; t < 40 && xs.length < n; t++) {
         const x = rng.range(-hw, hw);
-        if (xs.every(o => Math.abs(o - x) > 30)) xs.push(x);
+        if (xs.every(o => Math.abs(o - x) > 26)) xs.push(x);
       }
       // tipi DIVERSI sulla stessa parete: così le vie alternative hanno carattere diverso
       const pool = { ...def.passages.weights };
@@ -317,7 +317,7 @@ function placePassages(ctx, rng) {
       // cenge naturali sparse sulla parete (punti di riposo)
       const count = Math.round(2 * (hw + 14) * H * def.notches);
       for (let k = 0; k < count; k++) {
-        const x = rng.range(-hw - 14, hw + 14), f = rng.range(0.15, 0.85), r = rng.range(1.2, 2.2);
+        const x = rng.range(-hw - 14, hw + 14), f = rng.range(0.15, 0.85), r = rng.range(2.0, 3.2);
         const zp = c.zB + f * (c.zT - c.zB);
         ctx.stamps.add({ kind: 'notch', x, zp, level: c.yB + f * H, r, xmin: x - r, xmax: x + r, zmin: zp - r, zmax: zp + r });
         notches++;
@@ -347,8 +347,14 @@ function markCorridor(T, mask, path, radius, keepFree, cliffZones) {
   const rc = Math.ceil(radius / T.C);
   for (let k = 0; k < path.length; k += 2) {
     const [pi, pj] = path[k];
-    const zp = T.zOf(pj) - T.SH[pj * T.nx + pi];
+    const pc = pj * T.nx + pi;
+    const zp = T.zOf(pj) - T.SH[pc];
     if (!cliffZones.some(([a, b]) => zp >= a && zp <= b)) continue;
+    // conta solo dove la via SALE davvero (arrampicata o rampa), non dove cammina lungo la base
+    const [qi, qj] = path[Math.min(path.length - 1, k + 1)];
+    const climbing = !(T.F[pc] & FLAG_STAND) ||
+      (T.H[qj * T.nx + qi] - T.H[pc]) / (T.C * Math.max(1, Math.hypot(qi - pi, qj - pj))) > 0.28;
+    if (!climbing) continue;
     for (let dj = -rc; dj <= rc; dj++) for (let di = -rc; di <= rc; di++) {
       if (di * di + dj * dj > rc * rc) continue;
       const i = pi + di, j = pj + dj;
@@ -356,7 +362,7 @@ function markCorridor(T, mask, path, radius, keepFree, cliffZones) {
       const x = T.xOf(i), z = T.zOf(j), c = j * T.nx + i, czp = z - T.SH[c];
       if (keepFree.some(p => Math.hypot(x - p.x, z - p.z) < p.r)) continue;
       // si vieta solo la fascia della parete, non i pianori: si può sempre attraversare di lato
-      if (!cliffZones.some(([a, b]) => czp >= a + 1 && czp <= b - 1)) continue;
+      if (!cliffZones.some(([a, b, ca, cb]) => czp >= ca && czp <= cb)) continue;
       mask[c] = 1;
     }
   }
@@ -386,7 +392,9 @@ function validateRoutes(ctx, fires, peak) {
   const T = ctx.T, segments = [], repairs = [];
   const mask = new Uint8Array(T.nx * T.nz);
   // zone delle pareti (in z'), allargate per includere rampe e gradoni davanti alla base
-  const cliffZones = ctx.layout.sections.flatMap(sec => sec.cliffs.map(c => [c.zB - 9, c.zT + 2])); // [a+1, b-1] = celle vietate
+  // [a, b] = dove la via "usa" la parete (include gradoni e rampe davanti alla base)
+  // [ca, cb] = celle effettivamente vietate: solo la fascia della parete, il pianoro resta libero
+  const cliffZones = ctx.layout.sections.flatMap(sec => sec.cliffs.map(c => [c.zB - 8, c.zT + 2, c.zB - 2.5, c.zT + 0.5]));
   let start = { x: 0, z: 6 };
   let startCells = cellsNear(T, 0, 6, 14, (i, j) => T.F[j * T.nx + i] & FLAG_STAND);
 
@@ -404,18 +412,19 @@ function validateRoutes(ctx, fires, peak) {
     for (let r = 0; r < MAX_ROUTES; r++) {
       const tried = [];
       let res;
-      for (let iter = 0; iter < 100; iter++) {
+      for (let iter = 0; iter < 140; iter++) {
         res = solveSegment(T, { startCells, isGoal, target: goal, j0, j1, budget: ROUTE_SAFETY, blocked: r > 0 ? mask : null });
         if (res.ok || r >= MIN_ROUTES) break;            // le vie "extra" non si riparano: o ci sono o no
         const pick = res.candidates.find(([ci, cj]) => !tried.some(([ti, tj]) => Math.hypot(ci - ti, cj - tj) * T.C < 2.5));
-        if (!pick || tried.length >= 70) break;
+        if (!pick || tried.length >= 120) break;
         tried.push(pick);
         // RIPARAZIONE: una cengia appena sopra la cella raggiunta più vicina al traguardo
         const [ci, cj] = pick, c = cj * T.nx + ci, x = T.xOf(ci), z = T.zOf(cj);
         const [gx, gz] = T.gradient(x, z), gl = Math.hypot(gx, gz) || 1;
-        const cx = x + (gx / gl) * 0.7, cz = z + (gz / gl) * 0.7, zp = cz - T.SH[c];
-        ctx.stamps.add({ kind: 'notch', tag: 'repair', x: cx, zp, level: T.H[c], r: 1.6, safe: true,
-          xmin: cx - 1.6, xmax: cx + 1.6, zmin: zp - 1.6, zmax: zp + 1.6 });
+        const cx = x + (gx / gl) * 1.2, cz = z + (gz / gl) * 1.2, zp = cz - T.SH[c];
+        // raggio ≥ 4 celle: una cella è "piana" solo se lo sono anche le vicine
+        ctx.stamps.add({ kind: 'notch', tag: 'repair', x: cx, zp, level: T.H[c], r: 2.6, safe: true,
+          xmin: cx - 2.6, xmax: cx + 2.6, zmin: zp - 2.6, zmax: zp + 2.6 });
         ctx.rebuild(T.rowOf(cz) - 5, T.rowOf(cz) + 5);
         repairs.push({ segment: k, route: r, x: cx, z: cz, y: T.H[c] });
         segRepairs++;

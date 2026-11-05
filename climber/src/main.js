@@ -4,7 +4,9 @@
 import * as THREE from 'three';
 import { generateMountain } from './generator.js';
 import { dailySeed } from './rng.js';
-import { WorldView, buildPlayerMesh } from './render.js';
+import { WorldView } from './render.js';
+import { Character } from './character.js';
+import { loadAssets } from './assets.js';
 import { Player } from './player.js';
 import { Hud } from './hud.js';
 
@@ -20,7 +22,8 @@ $('seed-input').value = seed;
 
 setTimeout(start, 30); // lascia disegnare la schermata di caricamento
 
-function start() {
+async function start() {
+  const assets = await loadAssets();
   const world = generateMountain(seed);
   window.world = world; // comodo per esplorare dalla console del browser
 
@@ -42,10 +45,12 @@ function start() {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
-  const view = new WorldView(world, scene);
+  const view = new WorldView(world, scene, assets);
   const player = new Player(world);
-  const pmesh = buildPlayerMesh();
-  scene.add(pmesh);
+  const character = new Character(assets);
+  scene.add(character.root);
+  window.__char = character;
+  window.setCamera = (y, p) => { yaw = y; pitch = p; }; // utile per screenshot/debug dalla console
   const hud = new Hud(world);
   window.player = player;
 
@@ -87,7 +92,7 @@ function start() {
   const T = world.terrain;
   const target = new THREE.Vector3(), look = new THREE.Vector3(), cam = new THREE.Vector3();
   function placeCamera() {
-    target.set(player.x, player.y + 1.5, player.z);
+    target.set(player.x, player.y + (player.mode === 'climb' ? 0.4 : 1.5), player.z);
     look.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     // accorcia la distanza se la camera finirebbe dentro la roccia
     let d = 0.3;
@@ -117,10 +122,7 @@ function start() {
     jumpQueued = false;
     player.update(dt, input, yaw);
 
-    // in arrampicata il corpo sta staccato dalla parete lungo la normale
-    const off = player.mode === 'climb' ? 0.45 : 0;
-    pmesh.position.set(player.x + player.nx * off, player.y + (player.mode === 'climb' ? -0.6 : 0), player.z + player.nz * off);
-    pmesh.rotation.y = player.yaw;
+    character.update(player, dt);
     if (orbit) {
       // vista orbitale: tutta la montagna da fuori, per studiare la generazione
       orbitT += dt * 0.1;

@@ -89,7 +89,8 @@ pianoro (si cammina, poco inclinato) → parete (si scala, 62–84°) → pianor
 ```
 
 Numero di pareti, altezze, inclinazioni e lunghezza dei pianori vengono dai dati del bioma
-(`steps`). Il ghiacciaio ha poche pareti alte, l'altopiano rosso tante pareti basse e verticali.
+(`steps`). La montagna è ripida: circa 400 m in avanti per 300–350 m di salita (≈ 38° di media),
+con pianori corti (7–20 m) tra pareti di 8–20 m. Il ghiacciaio ha poche pareti alte, l'altopiano rosso tante pareti basse e verticali.
 È questa struttura a far sì che si vada **sempre avanti e in salita**. Il profilo si vede nella
 mappa (tasto M, grafico in alto a destra).
 
@@ -172,6 +173,7 @@ distanza minima `spacing` dagli altri oggetti (hash spaziale). Il **cibo** viene
 ```
 climber/
 ├── index.html          HUD, mappa, import di three.js
+├── assets/             ★ modelli e texture opzionali (vedi assets/README.md)
 ├── src/
 │   ├── rules.js        ★ regole condivise: griglia, materiali, costi di stamina
 │   ├── rng.js          seed, hash, RNG con fork
@@ -182,6 +184,8 @@ climber/
 │   ├── pathfind.js     ★ validatore (Dijkstra con riposi e celle vietate)
 │   ├── render.js       mesh three.js (terreno a blocchi, oggetti instanziati, cielo)
 │   ├── player.js       movimento segnaposto: da sostituire
+│   ├── character.js    personaggio: scheletro procedurale animato (mani in parete) o GLB con animazioni
+│   ├── assets.js       caricamento di assets/manifest.json, texture triplanari del terreno
 │   ├── hud.js          barra stamina/afflizioni, mappa dall'alto, profilo, elenco vie
 │   └── main.js         avvio, input, camera, loop
 └── tools/test-gen.mjs  test in Node: determinismo + scalabilità
@@ -214,7 +218,26 @@ Puoi riscriverlo da zero tenendo la stessa interfaccia (posizione in `x, y, z`, 
 tuo personaggio: ad esempio, se aggiungi un rampino che fa salire di 6 m gratis, il validatore può
 saperlo e permettere pareti più lunghe tra un riposo e l'altro.
 
-## 5. Aggiungere un bioma
+### Il personaggio
+`src/character.js` costruisce uno scheletro di gruppi annidati (spalla → gomito → mano, anca →
+ginocchio → piede) e lo anima in base allo stato del giocatore:
+- **camminata/corsa**: gambe e braccia che oscillano in base alla distanza percorsa;
+- **arrampicata**: corpo inclinato verso la parete, **mani alternate** (una si allunga verso
+  l'alto mentre l'altra tira) e piedi che spingono in opposizione. La fase avanza solo quando ti
+  muovi, quindi se sei fermo le mani restano ferme; con la stamina sotto il 25 % le braccia
+  **tremano**;
+- **in aria**: braccia aperte e gambe piegate.
+
+Se metti un personaggio GLB con animazioni in `assets/manifest.json`, viene usato quello.
+
+## 5. Asset
+
+Tutto funziona senza file esterni. In `assets/README.md` c'è l'elenco degli asset da far generare
+a un'AI, con dimensioni, perno, numero di triangoli e un prompt per ciascuno: personaggio, 2 texture
+del terreno, 14 oggetti dei biomi, falò. Ogni file che aggiungi in `assets/manifest.json`
+sostituisce la sua versione procedurale.
+
+## 6. Aggiungere un bioma
 
 1. Aggiungi una voce in `BIOMES` (`src/biomes.js`) copiando una esistente: altezza, restringimento,
    `shape`, `material`, `stamps`, `props`, colori, temperatura.
@@ -224,7 +247,7 @@ saperlo e permettere pareti più lunghe tra un riposo e l'altro.
    tipo (s/m/p), e quante riparazioni sono servite. Se sono tante, il bioma ha pochi passaggi o
    punti di riposo naturali (va bene se è voluto, come nel ghiacciaio).
 
-## 6. Idee per continuare
+## 7. Idee per continuare
 
 - Generare in un **Web Worker** (ora la generazione blocca la pagina per ~1 s).
 - Sostituire la heightmap con un **SDF 3D** per avere strapiombi, grotte e archi.

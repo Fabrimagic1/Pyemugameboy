@@ -7,6 +7,7 @@ import { MAT, MAT_INFO, SEA } from './rules.js';
 import { FLAG_STAND } from './surface.js';
 import { hash2 } from './rng.js';
 import { environmentAt } from './generator.js';
+import { addTriplanarDetail, proceduralDetail } from './assets.js';
 
 const TAU = Math.PI * 2;
 const ROWS_PER_CHUNK = 48;
@@ -14,37 +15,72 @@ export const ROUTE_COLORS = ['#ffffff', '#3fd0ff', '#ffd23f'];
 
 const col = hex => new THREE.Color(hex);
 
-// ── modelli degli oggetti: liste di primitive ────────────────────────────────
-// g: tipo di geometria, s: parametri, y: altezza del centro, c: colore, e: emissivo
+// ── modelli procedurali degli oggetti: liste di primitive ───────────────────
+// g: geometria, s: parametri, y/x/z: posizione, r: rotazione [x,y,z], sy: schiacciamento,
+// c: colore, e: emissivo. Se in assets/manifest.json c'è un GLB con lo stesso nome,
+// viene usato quello al posto di questa lista.
+const fronds = (n, y, len, c) => Array.from({ length: n }, (_, k) => ({
+  g: 'box', s: [0.5, 0.06, len], y, x: Math.sin((k / n) * Math.PI * 2) * len * 0.42, z: Math.cos((k / n) * Math.PI * 2) * len * 0.42,
+  r: [0.45, (k / n) * Math.PI * 2, 0], c,
+}));
 const MODELS = {
-  palm:          [{ g: 'cyl', s: [0.18, 0.3, 6], y: 3, c: '#8a6b45' }, { g: 'cone', s: [2.8, 1.4], y: 6.3, c: '#3f8f3a' }],
-  rock:          [{ g: 'ico', s: [1.0], y: 0.3, c: '#8c8478' }],
-  jungleTree:    [{ g: 'cyl', s: [0.35, 0.55, 8], y: 4, c: '#5a4630' }, { g: 'sph', s: [3.2], y: 8.4, c: '#2f6e2a', sy: 0.75 }],
-  bush:          [{ g: 'sph', s: [0.9], y: 0.5, c: '#3a7d2e', sy: 0.7 }],
-  giantMushroom: [{ g: 'cyl', s: [0.4, 0.55, 3.2], y: 1.6, c: '#e9e1d2' }, { g: 'sph', s: [2.4], y: 3.2, c: '#c2416a', sy: 0.42 }],
+  palm: [{ g: 'cyl', s: [0.14, 0.26, 3.2], y: 1.6, c: '#8a6b45', r: [0, 0, 0.06] }, { g: 'cyl', s: [0.12, 0.15, 3.0], y: 4.6, x: 0.2, c: '#7d5f3c', r: [0, 0, 0.14] },
+    ...fronds(7, 6.1, 2.6, '#3f8f3a'), { g: 'sph', s: [0.35], y: 5.9, x: 0.35, c: '#5b4024' }],
+  rock: [{ g: 'ico', s: [1.0], y: 0.3, c: '#8c8478', sy: 0.7, d: 1 }],
+  jungleTree: [{ g: 'cyl', s: [0.3, 0.55, 8], y: 4, c: '#5a4630' }, { g: 'sph', s: [2.6], y: 8.6, c: '#2f6e2a', sy: 0.7, d: 1 },
+    { g: 'sph', s: [1.9], y: 7.8, x: 1.8, c: '#3a7d2e', sy: 0.7, d: 1 }, { g: 'sph', s: [1.8], y: 7.6, x: -1.5, z: 1.0, c: '#2a6326', sy: 0.7, d: 1 }],
+  bush: [{ g: 'sph', s: [0.9], y: 0.45, c: '#3a7d2e', sy: 0.7, d: 1 }, { g: 'sph', s: [0.6], y: 0.4, x: 0.7, c: '#2f6e2a', sy: 0.8, d: 1 }],
+  giantMushroom: [{ g: 'cyl', s: [0.35, 0.55, 3.2], y: 1.6, c: '#e9e1d2' }, { g: 'sph', s: [2.4], y: 3.2, c: '#c2416a', sy: 0.42, d: 1 },
+    { g: 'sph', s: [0.35], y: 4.1, x: 0.8, c: '#f4e9f0' }, { g: 'sph', s: [0.28], y: 3.9, x: -1.1, z: 0.6, c: '#f4e9f0' }, { g: 'sph', s: [0.3], y: 4.0, z: -1.0, c: '#f4e9f0' }],
   smallMushroom: [{ g: 'cyl', s: [0.08, 0.1, 0.5], y: 0.25, c: '#efe6d8' }, { g: 'sph', s: [0.3], y: 0.5, c: '#9a5bd1', sy: 0.5, e: 0.6 }],
-  pine:          [{ g: 'cyl', s: [0.2, 0.3, 4], y: 2, c: '#5b4632' }, { g: 'cone', s: [1.7, 4], y: 3.6, c: '#2e4d3a' }, { g: 'cone', s: [1.2, 2.6], y: 5.4, c: '#335a43' }],
-  iceShard:      [{ g: 'cone', s: [0.5, 2.4], y: 1.1, c: '#bfe4f5' }],
-  cactus:        [{ g: 'cyl', s: [0.35, 0.4, 3], y: 1.5, c: '#4f8a3a' }, { g: 'cyl', s: [0.22, 0.25, 1.4], y: 1.9, x: 0.6, c: '#4f8a3a' }],
-  boulder:       [{ g: 'ico', s: [1.6], y: 0.7, c: '#a4583a' }],
-  obsidian:      [{ g: 'cone', s: [0.6, 2.2], y: 1.0, c: '#1b1720' }],
-  emberRock:     [{ g: 'ico', s: [0.8], y: 0.3, c: '#3b2a26' }, { g: 'ico', s: [0.35], y: 0.75, c: '#ff6a20', e: 2.5 }],
-  summitRock:    [{ g: 'ico', s: [0.7], y: 0.25, c: '#878c95' }],
+  pine: [{ g: 'cyl', s: [0.18, 0.3, 4], y: 2, c: '#5b4632' }, { g: 'cone', s: [1.9, 3.2], y: 3.0, c: '#2e4d3a' }, { g: 'cone', s: [1.5, 2.8], y: 4.6, c: '#335a43' },
+    { g: 'cone', s: [1.0, 2.2], y: 6.0, c: '#3a6649' }, { g: 'cone', s: [1.2, 0.5], y: 4.15, c: '#eef3f7' }],
+  iceShard: [{ g: 'cone', s: [0.5, 2.4], y: 1.1, c: '#bfe4f5', e: 0.15 }, { g: 'cone', s: [0.3, 1.4], y: 0.6, x: 0.45, c: '#d4eef9', r: [0, 0, -0.35] }],
+  cactus: [{ g: 'cyl', s: [0.32, 0.38, 3], y: 1.5, c: '#4f8a3a' }, { g: 'cyl', s: [0.2, 0.22, 1.2], y: 1.6, x: 0.55, c: '#4f8a3a', r: [0, 0, -1.2] },
+    { g: 'cyl', s: [0.2, 0.22, 1.0], y: 2.3, x: 0.95, c: '#4f8a3a' }, { g: 'sph', s: [0.33], y: 3.0, c: '#4f8a3a' }],
+  boulder: [{ g: 'ico', s: [1.6], y: 0.7, c: '#a4583a', sy: 0.75, d: 1 }, { g: 'ico', s: [0.7], y: 0.3, x: 1.4, c: '#8e4529', d: 1 }],
+  obsidian: [{ g: 'cone', s: [0.6, 2.2], y: 1.0, c: '#1b1720' }, { g: 'cone', s: [0.4, 1.4], y: 0.6, x: 0.5, c: '#251f2b', r: [0, 0, -0.4] }],
+  emberRock: [{ g: 'ico', s: [0.8], y: 0.3, c: '#3b2a26', d: 1 }, { g: 'ico', s: [0.35], y: 0.75, c: '#ff6a20', e: 2.5 }],
+  summitRock: [{ g: 'ico', s: [0.7], y: 0.25, c: '#878c95', sy: 0.7, d: 1 }],
 };
 
 function primitive(p) {
   switch (p.g) {
     case 'cyl': return new THREE.CylinderGeometry(p.s[0], p.s[1], p.s[2], 7);
     case 'cone': return new THREE.ConeGeometry(p.s[0], p.s[1], 8);
-    case 'sph': return new THREE.SphereGeometry(p.s[0], 12, 8);
-    case 'ico': return new THREE.IcosahedronGeometry(p.s[0], 0);
+    case 'sph': return p.d ? new THREE.IcosahedronGeometry(p.s[0], 1) : new THREE.SphereGeometry(p.s[0], 10, 7);
+    case 'ico': return new THREE.IcosahedronGeometry(p.s[0], p.d || 0);
+    case 'box': return new THREE.BoxGeometry(p.s[0], p.s[1], p.s[2]);
   }
 }
 
+// Le parti di un oggetto (procedurale o GLB) come coppie {geometry, material, matrix}.
+function modelParts(type, assets) {
+  const ext = assets && assets.models[type];
+  if (ext) {
+    const parts = [];
+    ext.scene.updateMatrixWorld(true);
+    const S = new THREE.Matrix4().makeScale(ext.scale, ext.scale, ext.scale);
+    ext.scene.traverse(o => {
+      if (!o.isMesh) return;
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();   // alcuni modelli AI non le hanno
+      parts.push({ geometry: o.geometry, material: o.material, matrix: S.clone().multiply(o.matrixWorld) });
+    });
+    return parts;
+  }
+  return (MODELS[type] || []).map(pt => ({
+    geometry: primitive(pt),
+    material: new THREE.MeshLambertMaterial({ color: pt.c, flatShading: true, emissive: pt.e ? pt.c : '#000000', emissiveIntensity: pt.e || 0 }),
+    matrix: new THREE.Matrix4().compose(new THREE.Vector3(pt.x || 0, pt.y, pt.z || 0),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(...(pt.r || [0, 0, 0]))), new THREE.Vector3(1, pt.sy || 1, 1)),
+  }));
+}
+
 export class WorldView {
-  constructor(world, scene) {
+  constructor(world, scene, assets = { models: {}, textures: {} }) {
     this.world = world;
     this.scene = scene;
+    this.assets = assets;
     this.buildMountain();
     this.buildIsland();
     this.buildProps();
@@ -68,6 +104,9 @@ export class WorldView {
     const seabed = col('#c9b27a');
     const N = w.noise, tmp = new THREE.Color();
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // dettaglio triplanare: texture tue (assets/manifest.json) o procedurali
+    const tx = this.assets.textures;
+    addTriplanarDetail(mat, tx.rock || proceduralDetail('rock', 256, 3), tx.ground || proceduralDetail('ground', 256, 7));
     this.mountain = new THREE.Group();
 
     for (let j0 = 0; j0 < T.nz - 1; j0 += ROWS_PER_CHUNK) {
@@ -129,15 +168,13 @@ export class WorldView {
       if (!byType.has(p.type)) byType.set(p.type, []);
       byType.get(p.type).push(p);
     }
-    const m4 = new THREE.Matrix4(), part = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
     for (const [type, list] of byType) {
-      for (const pt of MODELS[type] || []) {
-        const mat = new THREE.MeshLambertMaterial({ color: pt.c, emissive: pt.e ? pt.c : '#000000', emissiveIntensity: pt.e || 0 });
-        const mesh = new THREE.InstancedMesh(primitive(pt), mat, list.length);
-        part.compose(new THREE.Vector3(pt.x || 0, pt.y, 0), new THREE.Quaternion(), new THREE.Vector3(1, pt.sy || 1, 1));
+      for (const part of modelParts(type, this.assets)) {
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, list.length);
         list.forEach((p, k) => {
           q.setFromAxisAngle(up, p.yaw);
-          m4.compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(p.scale, p.scale, p.scale)).multiply(part);
+          m4.compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(p.scale, p.scale, p.scale)).multiply(part.matrix);
           mesh.setMatrixAt(k, m4);
         });
         mesh.castShadow = true;
@@ -150,10 +187,18 @@ export class WorldView {
     this.fires = [];
     const logMat = new THREE.MeshLambertMaterial({ color: '#5a3b22' });
     const flameMat = new THREE.MeshBasicMaterial({ color: '#ffb347' });
+    const stoneMat = new THREE.MeshLambertMaterial({ color: '#77716a', flatShading: true });
     for (const f of this.world.campfires) {
       const g = new THREE.Group();
       g.position.set(f.pos.x, f.pos.y, f.pos.z);
-      for (let k = 0; k < 3; k++) {
+      const ext = this.assets.models.campfire;
+      if (ext) { const m = ext.scene.clone(); m.scale.setScalar(ext.scale); g.add(m); }
+      for (let k = 0; k < 9 && !ext; k++) {
+        const st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), stoneMat);
+        st.position.set(Math.cos((k / 9) * Math.PI * 2) * 0.85, 0.08, Math.sin((k / 9) * Math.PI * 2) * 0.85);
+        st.scale.y = 0.6; g.add(st);
+      }
+      for (let k = 0; k < 3 && !ext; k++) {
         const log = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.4, 6), logMat);
         log.rotation.z = Math.PI / 2; log.rotation.y = (k / 3) * Math.PI; log.position.y = 0.12;
         g.add(log);
@@ -263,13 +308,3 @@ export class WorldView {
   }
 }
 
-export function buildPlayerMesh() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.95, 4, 10), new THREE.MeshLambertMaterial({ color: '#f08a24' }));
-  body.position.y = 0.82; body.castShadow = true; g.add(body);
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.3), new THREE.MeshLambertMaterial({ color: '#7b4a2a' }));
-  pack.position.set(0, 1.0, 0.32); pack.castShadow = true; g.add(pack);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.12), new THREE.MeshLambertMaterial({ color: '#203040' }));
-  visor.position.set(0, 1.42, -0.3); g.add(visor);
-  return g;
-}
