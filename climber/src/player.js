@@ -2,25 +2,25 @@
 // GIOCATORE — movimento SEGNAPOSTO
 // Questo file è pensato per essere sostituito con le tue meccaniche.
 // Dal mondo usa solo:
-//   surface.radius(θ, y)     raggio della parete
-//   surface.upNormal(θ, y)   quanto è "pavimento" (1) o "muro" (0) / soffitto (<0)
-//   surface.material(θ, y)   materiale (ghiaccio, liane, lava…)
+//   terrain.height(x, z)     quota del terreno
+//   terrain.gradient(x, z)   pendenza [dh/dx, dh/dz] (verso dove si sale)
+//   terrain.upNormal(x, z)   1 = piano, 0 = parete verticale
+//   terrain.material(x, z)   materiale (ghiaccio, liane, lava…)
 //   rules.js                 le stesse regole di stamina che usa il validatore
 // Se cambi quanto costa arrampicarsi, cambialo in rules.js: così il generatore
-// continuerà a garantire montagne scalabili con il TUO movimento.
+// continuerà a garantire vie scalabili con il TUO movimento.
 // ─────────────────────────────────────────────────────────────────────────────
-import { CLIMB, MAT, MAT_INFO, overhangFactor, islandFloor } from './rules.js';
+import { CLIMB, MAT, MAT_INFO, STAND_UP, STEP, SEA, steepFactor } from './rules.js';
 import { environmentAt } from './generator.js';
 
-const PAD = 0.38;      // raggio del corpo
 const GRAVITY = 22;
-const STEP = 0.75;     // gradino massimo superabile camminando
 const SUBSTEP = 1 / 120;
+const WALK_UP = 0.6;    // oltre questa pendenza non si cammina in salita: si scala
 
 export class Player {
   constructor(world) {
     this.world = world;
-    this.S = world.surface;
+    this.T = world.terrain;
     this.events = [];
     this.cold = 0; this.heat = 0; this.hunger = 0; this.injury = 0;
     this.checkpoint = null;
@@ -35,13 +35,14 @@ export class Player {
 
   respawn() {
     const at = this.checkpoint ? this.checkpoint.spawn : this.world.spawn;
-    this.x = at.x; this.y = at.y + 0.3; this.z = at.z;
+    this.x = at.x; this.z = at.z; this.y = this.T.height(at.x, at.z) + 0.2;
     this.vx = this.vy = this.vz = 0;
     this.mode = 'walk';
     this.grounded = false;
     this.lunge = 0;
     this.stamina = this.maxStamina;
-    this.yaw = 0;
+    this.yaw = Math.PI;   // guarda in avanti (+z)
+    this.nx = 0; this.ny = 1; this.nz = 0;
   }
 
   say(text) { this.events.push(text); }
@@ -52,14 +53,17 @@ export class Player {
     const n = Math.max(1, Math.ceil(dt / SUBSTEP)), h = dt / n;
     for (let k = 0; k < n; k++) {
       const inp = k === 0 ? input : { ...input, jump: false };
-      if (this.mode === 'climb') this.climbStep(h, inp); else this.walkStep(h, inp, camYaw);
+      if (this.mode === 'climb') this.climbStep(h, inp, camYaw); else this.walkStep(h, inp, camYaw);
     }
+    const [gx, gz] = this.T.gradient(this.x, this.z), l = Math.hypot(gx, 1, gz);
+    this.nx = -gx / l; this.ny = 1 / l; this.nz = -gz / l;   // normale (per il disegno)
     this.afflictions(dt);
     this.interactions(dt);
   }
 
   // ── camminata / salto ───────────────────────────────────────────────────────
   walkStep(h, inp, camYaw) {
+    const T = this.T;
     const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);  // avanti della camera
     const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);   // destra della camera
     let wx = fx * inp.fwd + rx * inp.right, wz = fz * inp.fwd + rz * inp.right;
@@ -81,59 +85,58 @@ export class Player {
     else if (this.grounded) this.stamina += 0.24 * h;
     this.stamina = Math.min(this.stamina, this.maxStamina);
 
-    this.x += this.vx * h; this.y += this.vy * h; this.z += this.vz * h;
-    this.collide();
-
-    if (inp.grab && this.stamina > 0.03 && this.wallInReach()) {
-      this.mode = 'climb'; this.vx = this.vy = this.vz = 0;
-    }
-  }
-
-  wallInReach() {
-    const th = Math.atan2(this.z, this.x), r = Math.hypot(this.x, this.z);
-    const s = Math.max(this.S.radius(th, this.y + 0.6), this.S.radius(th, this.y + 1.2));
-    return r - s < PAD + 0.45 && this.S.upNormal(th, this.y + 1.0) < 0.6;
-  }
-
-  // Collisione con la parete: tutto in coordinate cilindriche.
-  collide() {
-    const S = this.S;
-    const th = Math.atan2(this.z, this.x), c = Math.cos(th), s = Math.sin(th);
-    let r = Math.hypot(this.x, this.z), y = this.y;
-    const wasGrounded = this.grounded;
-    const vyBefore = this.vy;
-    this.grounded = false;
-    const killInward = () => {
-      const vr = this.vx * c + this.vz * s;
-      if (vr < 0) { this.vx -= vr * c; this.vz -= vr * s; }
+    // movimento orizzontale: bloccato da pareti e pendii troppo ripidi (si scivola di lato)
+    const tryMove = (nx, nz) => {
+      const g = T.height(nx, nz);
+      if (g > this.y + STEP) return false;
+      if (g > this.y + 0.02 && T.upNormal(nx, nz) < WALK_UP) return false;
+      return true;
     };
+    const nx = this.x + this.vx * h, nz = this.z + this.vz * h;
+    if (tryMove(nx, nz)) { this.x = nx; this.z = nz; }
+    else if (tryMove(nx, this.z)) { this.x = nx; this.vz = 0; }
+    else if (tryMove(this.x, nz)) { this.z = nz; this.vx = 0; }
+    else { this.vx = this.vz = 0; }
 
-    const fy = islandFloor(r);
-    if (y <= fy) { y = fy; if (this.vy < 0) this.vy = 0; this.grounded = true; }
-
-    // piedi dentro la roccia: prima prova a salire il gradino, altrimenti è un muro
-    const sF = S.radius(th, y + 0.05);
-    if (r < sF + PAD) {
-      let up = -1;
-      if (this.vy <= 1) for (let d = 0.05; d <= STEP; d += 0.05) {
-        if (S.radius(th, y + 0.05 + d) + PAD <= r) { up = d; break; }
-      }
-      if (up >= 0 && S.upNormal(th, y + up - 0.05) > 0.45) {
-        y += up; if (this.vy < 0) this.vy = 0; this.grounded = true;
-      } else { r = sF + PAD; killInward(); }
+    // verticale
+    const wasGrounded = this.grounded, vyBefore = this.vy;
+    this.y += this.vy * h;
+    const g = T.height(this.x, this.z);
+    this.grounded = false;
+    if (this.y <= g || (wasGrounded && this.vy <= 0 && this.y - g < 0.35)) {
+      this.y = g; if (this.vy < 0) this.vy = 0; this.grounded = true;   // "incolla" in discesa
     }
-    for (const hgt of [0.8, 1.5]) {
-      const sb = S.radius(th, y + hgt);
-      if (r < sb + PAD) { r = sb + PAD; killInward(); }
+    // su un pendio troppo ripido si scivola giù
+    if (this.grounded && T.upNormal(this.x, this.z) < 0.5) {
+      const [gx, gz] = T.gradient(this.x, this.z);
+      this.vx -= gx * 9 * h; this.vz -= gz * 9 * h;
     }
-    // sonda sotto i piedi: c'è un pavimento appena sotto?
-    if (!this.grounded && this.vy <= 0.01) {
-      const below = S.radius(th, y - 0.08);
-      if (below + PAD > r && S.upNormal(th, y - 0.08) > 0.5) { this.grounded = true; this.vy = 0; }
-    }
-
     if (this.grounded && !wasGrounded) this.land(-vyBefore);
-    this.x = r * c; this.z = r * s; this.y = y;
+
+    if (inp.grab && this.stamina > 0.03) this.tryGrab(camYaw);
+  }
+
+  // C'è una parete davanti (nella direzione della camera o del movimento)?
+  tryGrab(camYaw) {
+    const T = this.T;
+    for (const yaw of [camYaw, this.yaw]) {
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      for (let d = 0.3; d <= 1.2; d += 0.15) {
+        const px = this.x + fx * d, pz = this.z + fz * d;
+        if (T.height(px, pz) > this.y + 0.9 && T.upNormal(px, pz) < STAND_UP) {
+          // attaccati al punto della parete all'altezza attuale
+          let a = 0, b = d;
+          for (let k = 0; k < 10; k++) {
+            const m = (a + b) / 2;
+            if (T.height(this.x + fx * m, this.z + fz * m) > this.y + 0.3) b = m; else a = m;
+          }
+          this.x += fx * b; this.z += fz * b; this.y = T.height(this.x, this.z);
+          this.mode = 'climb'; this.vx = this.vy = this.vz = 0;
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   land(speed) {
@@ -144,59 +147,51 @@ export class Player {
     }
   }
 
-  // ── arrampicata ─────────────────────────────────────────────────────────────
+  // ── arrampicata: ci si muove SULLA superficie, lungo la pendenza ────────────
   climbStep(h, inp) {
-    const S = this.S;
-    let th = Math.atan2(this.z, this.x), r = Math.hypot(this.x, this.z), y = this.y;
+    const T = this.T;
     if (!inp.grab || this.stamina <= 0) {
       if (this.stamina <= 0) this.say('Stamina finita!');
-      return this.release(1.5);
+      return this.release(2);
     }
-    let vy = inp.fwd * CLIMB.speedUp, vs = inp.right * CLIMB.speedSide;
     if (inp.jump && this.stamina > CLIMB.lungeCost * 0.5) { this.lunge = 0.3; this.stamina -= CLIMB.lungeCost; }
-    let paid = true;
-    if (this.lunge > 0) { vy = CLIMB.lungeSpeed; this.lunge -= h; paid = false; }
 
-    const ny = y + vy * h;
-    const nth = th - (vs * h) / Math.max(r, 1);   // "destra" guardando la parete = θ decrescente
-    const mat = S.material(nth, ny + 0.9);
-    const dist = Math.hypot(vy * h, vs * h);
-    if (paid) this.stamina -= dist * CLIMB.drainPerMeter * MAT_INFO[mat].climb * overhangFactor(S.dRdy(nth, ny + 0.9));
+    const [gx, gz] = T.gradient(this.x, this.z);
+    const gl = Math.hypot(gx, gz);
+    if (gl < 0.05) return this.release(0);
+    const ux = gx / gl, uz = gz / gl;           // direzione (orizzontale) in cui si sale
+    const rx = -uz, rz = ux;                    // destra guardando la parete
+    let up = inp.fwd * CLIMB.speedUp, side = inp.right * CLIMB.speedSide, paid = true;
+    if (this.lunge > 0) { up = CLIMB.lungeSpeed; this.lunge -= h; paid = false; }
+    // spostamento lungo la superficie: in orizzontale si avanza di 1/√(1+g²) per metro
+    const sUp = (up * h) / Math.sqrt(1 + gl * gl);
+    const nx = this.x + ux * sUp + rx * side * h, nz = this.z + uz * sUp + rz * side * h;
+    const ny = T.height(nx, nz);
+    const dist = Math.hypot(nx - this.x, ny - this.y, nz - this.z);
+    const mat = T.material(nx, nz), upN = T.upNormal(nx, nz);
+    if (paid) this.stamina -= dist * CLIMB.drainPerMeter * MAT_INFO[mat].climb * steepFactor(upN);
     this.stamina -= CLIMB.idleDrain * h;
     if (mat === MAT.LAVA) { this.injury += 0.35 * h; if (this.hurtCooldown <= 0) { this.say('Lava! Ti bruci'); this.hurtCooldown = 1.5; } }
-
-    // scavalcare il bordo di una cengia: un po' più verso l'interno c'è roccia
-    // con la cima piatta tra le ginocchia e la testa? Allora ci si tira su.
-    if (vy > 0) {
-      const rIn = S.radius(nth, ny + 1.4) + PAD + 0.3;
-      let gh = null;
-      for (let yy = ny + 1.4; yy >= ny + 0.4; yy -= 0.05) if (S.radius(nth, yy) > rIn) { gh = yy; break; }
-      if (gh !== null && S.upNormal(nth, gh) > 0.55 && S.radius(nth, gh + 1.0) + PAD < rIn) {
-        this.x = rIn * Math.cos(nth); this.z = rIn * Math.sin(nth); this.y = gh + 0.1;
-        this.mode = 'walk'; this.vx = this.vz = 0; this.vy = 0; this.lunge = 0;
-        return;
-      }
-    }
-    const top = Math.max(S.radius(nth, ny + 0.1), S.radius(nth, ny + 0.9), S.radius(nth, ny + 1.6));
-    if (top <= 0.5) return this.release(0);
-    if (ny <= islandFloor(r) + 0.02 && vy < 0) return this.release(0);
-    const nr = top + PAD;
-    this.x = nr * Math.cos(nth); this.z = nr * Math.sin(nth); this.y = ny;
-    this.yaw = Math.atan2(Math.cos(nth), Math.sin(nth));       // guarda la parete
-    if (vy <= 0 && S.upNormal(nth, ny + 0.05) > 0.7) { this.mode = 'walk'; this.vy = 0; } // piedi su un pendio
+    if (ny < SEA) return this.release(0);
+    this.x = nx; this.z = nz; this.y = ny;
+    this.yaw = Math.atan2(-ux, -uz);            // guarda la parete
+    // arrivati su terreno camminabile (cima della parete, cengia) → si torna a piedi
+    if (upN >= STAND_UP && (up >= 0 || upN > 0.85)) { this.mode = 'walk'; this.vy = 0; this.lunge = 0; this.grounded = true; }
   }
 
   release(push) {
-    const th = Math.atan2(this.z, this.x);
+    const [gx, gz] = this.T.gradient(this.x, this.z), gl = Math.hypot(gx, gz) || 1;
     this.mode = 'walk';
-    this.vx = Math.cos(th) * push; this.vz = Math.sin(th) * push;
-    this.vy = Math.max(0, this.lunge > 0 ? 4 : 0);
+    this.vx = (-gx / gl) * push; this.vz = (-gz / gl) * push;   // ci si stacca dalla parete
+    this.vy = this.lunge > 0 ? 4 : 0;
+    this.y += 0.05;
     this.lunge = 0;
+    this.grounded = false;
   }
 
   // ── afflizioni: riducono la barra massima (come fame/freddo/ferite) ──────────
   afflictions(dt) {
-    const env = environmentAt(this.world, this.y);
+    const env = environmentAt(this.world, this.x, this.z);
     this.env = env;
     const near = this.world.campfires.find(f => Math.hypot(f.pos.x - this.x, f.pos.y - this.y, f.pos.z - this.z) < 7);
     this.warm = !!near;
@@ -218,8 +213,9 @@ export class Player {
       this.cold = this.heat = 0; this.injury = 0.1; this.hunger = Math.min(this.hunger, 0.3);
       this.respawn();
     }
-    if (this.y < -0.6) { this.say('In acqua! Si riparte'); this.respawn(); }
-    if (!this.won && this.y > this.world.height - 3) { this.won = true; this.say('VETTA RAGGIUNTA!'); }
+    if (this.y < SEA + 0.2 && this.T.height(this.x, this.z) < SEA) { this.say('In acqua! Si riparte'); this.respawn(); }
+    const pk = this.world.peak;
+    if (!this.won && Math.hypot(this.x - pk.x, this.z - pk.z) < 6 && this.y > pk.y - 2) { this.won = true; this.say('VETTA RAGGIUNTA!'); }
   }
 
   interactions(dt) {

@@ -3,13 +3,14 @@
 // Nessuna logica di gioco qui: solo grafica.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { MAT, MAT_INFO } from './rules.js';
+import { MAT, MAT_INFO, SEA } from './rules.js';
 import { FLAG_STAND } from './surface.js';
 import { hash2 } from './rng.js';
 import { environmentAt } from './generator.js';
 
 const TAU = Math.PI * 2;
-const ROWS_PER_CHUNK = 40;
+const ROWS_PER_CHUNK = 48;
+export const ROUTE_COLORS = ['#ffffff', '#3fd0ff', '#ffd23f'];
 
 const col = hex => new THREE.Color(hex);
 
@@ -55,58 +56,51 @@ export class WorldView {
     this.time = 0;
   }
 
-  // ── la montagna: griglia (θ, y) → vertici, a blocchi di righe ──────────────
+  // ── il terreno: heightmap → vertici, a blocchi di righe ────────────────────
   buildMountain() {
-    const w = this.world, s = w.surface, W = s.W, R = s.R;
-    const pal = w.layout.biomes.map(b => ({
+    const w = this.world, T = w.terrain, nx = T.nx, H = T.H;
+    const pal = w.layout.sections.map(b => ({
       wall: col(b.def.palette.wall), wall2: col(b.def.palette.wall2), ledge: col(b.def.palette.ledge),
       bands: b.def.palette.bands ? b.def.palette.bands.map(col) : null, bandH: b.def.palette.bandHeight,
     }));
     const matCol = MAT_INFO.map(m => (m.color ? new THREE.Color().setRGB(...m.color, THREE.SRGBColorSpace) : null));
     matCol[MAT.LAVA] = new THREE.Color(3.0, 0.7, 0.08); // >1: "brilla" anche senza luce
+    const seabed = col('#c9b27a');
     const N = w.noise, tmp = new THREE.Color();
-    const P = (i, j) => {
-      const jj = Math.min(s.rows - 1, Math.max(0, j));
-      const r = R[jj * W + ((i % W) + W) % W], th = (i / W) * TAU;
-      return [r * Math.cos(th), jj * s.dy, r * Math.sin(th)];
-    };
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.mountain = new THREE.Group();
-    const lastRow = Math.min(s.rows - 1, Math.ceil(w.height / s.dy) + 1);
 
-    for (let j0 = 0; j0 < lastRow; j0 += ROWS_PER_CHUNK) {
-      const j1 = Math.min(lastRow, j0 + ROWS_PER_CHUNK);
-      const nr = j1 - j0 + 1, nc = W + 1;
-      const pos = new Float32Array(nr * nc * 3), nor = new Float32Array(nr * nc * 3), clr = new Float32Array(nr * nc * 3);
+    for (let j0 = 0; j0 < T.nz - 1; j0 += ROWS_PER_CHUNK) {
+      const j1 = Math.min(T.nz - 1, j0 + ROWS_PER_CHUNK);
+      const nr = j1 - j0 + 1;
+      const pos = new Float32Array(nr * nx * 3), nor = new Float32Array(nr * nx * 3), clr = new Float32Array(nr * nx * 3);
       for (let jj = 0; jj < nr; jj++) {
-        const j = j0 + jj, y = j * s.dy;
-        for (let i = 0; i < nc; i++) {
-          const v = (jj * nc + i) * 3, ii = i % W, c = j * W + ii;
-          const p = P(i, j);
-          pos[v] = p[0]; pos[v + 1] = p[1]; pos[v + 2] = p[2];
-          // normale = prodotto vettoriale delle tangenti (verticale × orizzontale)
-          const a = P(i + 1, j), b = P(i - 1, j), u = P(i, j + 1), d = P(i, j - 1);
-          const tx = a[0] - b[0], ty = a[1] - b[1], tz = a[2] - b[2];
-          const vx = u[0] - d[0], vy = u[1] - d[1], vz = u[2] - d[2];
-          let nx = vy * tz - vz * ty, ny = vz * tx - vx * tz, nz = vx * ty - vy * tx;
-          const nl = Math.hypot(nx, ny, nz) || 1;
-          nor[v] = nx / nl; nor[v + 1] = ny / nl; nor[v + 2] = nz / nl;
-          // colore: materiale > cengia > bande > parete (con variazione e finta occlusione)
-          const pl = pal[s.B[c]], m = s.M[c];
-          if (matCol[m]) tmp.copy(matCol[m]);
-          else if (s.F[c] & FLAG_STAND) tmp.copy(pl.ledge);
-          else if (pl.bands) tmp.copy(pl.bands[(((Math.floor((y + 2 * N.perlin(ii * 0.05, 0.5, j * 0.01)) / pl.bandH)) % pl.bands.length) + pl.bands.length) % pl.bands.length]);
-          else tmp.copy(pl.wall).lerp(pl.wall2, 0.5 + 0.5 * N.perlin(ii * 0.11, j * 0.07, 3.7));
-          const around = (R[j * W + ((ii + 1) % W)] + R[j * W + ((ii + W - 1) % W)] +
-            R[Math.min(s.rows - 1, j + 1) * W + ii] + R[Math.max(0, j - 1) * W + ii]) / 4;
-          const ao = Math.min(1.08, Math.max(0.6, 1 - (around - R[c]) * 0.15));
-          const k = ao * (0.9 + 0.2 * hash2(ii, j, 7));
+        const j = j0 + jj, jm = Math.max(0, j - 1), jp = Math.min(T.nz - 1, j + 1);
+        for (let i = 0; i < nx; i++) {
+          const v = (jj * nx + i) * 3, c = j * nx + i, y = H[c];
+          const im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
+          pos[v] = T.xOf(i); pos[v + 1] = y; pos[v + 2] = T.zOf(j);
+          // normale dal gradiente della heightmap
+          const gx = (H[j * nx + ip] - H[j * nx + im]) / ((ip - im) * T.C);
+          const gz = (H[jp * nx + i] - H[jm * nx + i]) / ((jp - jm) * T.C);
+          const nl = Math.hypot(gx, 1, gz);
+          nor[v] = -gx / nl; nor[v + 1] = 1 / nl; nor[v + 2] = -gz / nl;
+          // colore: materiale > piano > bande > parete (con variazione e finta occlusione)
+          const pl = pal[T.B[c]], m = T.M[c];
+          if (y < SEA + 0.3) tmp.copy(seabed);
+          else if (matCol[m]) tmp.copy(matCol[m]);
+          else if (T.F[c] & FLAG_STAND) tmp.copy(pl.ledge);
+          else if (pl.bands) tmp.copy(pl.bands[(((Math.floor((y + 2 * N.perlin(i * 0.05, 0.5, j * 0.01)) / pl.bandH)) % pl.bands.length) + pl.bands.length) % pl.bands.length]);
+          else tmp.copy(pl.wall).lerp(pl.wall2, 0.5 + 0.5 * N.perlin(i * 0.11, y * 0.15, j * 0.07));
+          const around = (H[j * nx + ip] + H[j * nx + im] + H[jp * nx + i] + H[jm * nx + i]) / 4;
+          const ao = Math.min(1.08, Math.max(0.6, 1 - (around - y) * 0.12));
+          const k = ao * (0.9 + 0.2 * hash2(i, j, 7));
           clr[v] = tmp.r * k; clr[v + 1] = tmp.g * k; clr[v + 2] = tmp.b * k;
         }
       }
       const idx = [];
-      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < W; i++) {
-        const a = jj * nc + i, b = a + 1, c2 = a + nc, d = c2 + 1;
+      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < nx - 1; i++) {
+        const a = jj * nx + i, b = a + 1, c2 = a + nx, d = c2 + 1;
         idx.push(a, c2, b, b, c2, d);
       }
       const geo = new THREE.BufferGeometry();
@@ -123,13 +117,9 @@ export class WorldView {
   }
 
   buildIsland() {
-    const pts = [[0, 0], [215, 0], [240, -1.5], [300, -6], [420, -14]].map(([r, y]) => new THREE.Vector2(r, y));
-    const ground = new THREE.Mesh(new THREE.LatheGeometry(pts, 96), new THREE.MeshLambertMaterial({ color: '#e2cf98', side: THREE.DoubleSide }));
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-    const water = new THREE.Mesh(new THREE.CircleGeometry(1400, 64),
-      new THREE.MeshStandardMaterial({ color: '#2a86c0', roughness: 0.25, transparent: true, opacity: 0.88 }));
-    water.rotation.x = -Math.PI / 2; water.position.y = -0.8;
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000),
+      new THREE.MeshStandardMaterial({ color: '#2a86c0', roughness: 0.25, transparent: true, opacity: 0.85 }));
+    water.rotation.x = -Math.PI / 2; water.position.set(0, SEA, this.world.length / 2);
     this.scene.add(water);
   }
 
@@ -197,7 +187,7 @@ export class WorldView {
 
   buildSummit() {
     const g = new THREE.Group();
-    g.position.set(0, this.world.height - 0.4, 0);
+    g.position.set(this.world.peak.x, this.world.peak.y, this.world.peak.z);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.5, 6), new THREE.MeshLambertMaterial({ color: '#dddddd' }));
     pole.position.y = 1.75; g.add(pole);
     this.flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), new THREE.MeshLambertMaterial({ color: '#e8452c', side: THREE.DoubleSide }));
@@ -216,29 +206,26 @@ export class WorldView {
     this.sky = sky;
     this.scene.add(sky);
     this.scene.fog = new THREE.Fog('#ffffff', 40, 400);
-    this.envColors = this.world.layout.biomes.map(b => ({
+    this.envColors = this.world.layout.sections.map(b => ({
       top: col(b.def.sky.top), bottom: col(b.def.sky.bottom), fog: col(b.def.sky.fog), far: b.def.sky.far,
     }));
   }
 
-  // percorso garantito (P) e riparazioni (B): strumenti per capire la generazione
+  // vie garantite (P) e riparazioni: strumenti per capire la generazione
   buildDebug() {
-    const s = this.world.surface;
+    const T = this.world.terrain;
     this.debug = new THREE.Group();
-    for (const seg of this.world.route.segments) {
-      const pts = seg.path.filter((_, k) => k % 3 === 0).map(([i, j]) => {
-        const th = s.theta(i), y = j * s.dy, r = s.R[j * s.W + i] + 0.6;
-        return new THREE.Vector3(r * Math.cos(th), y + 0.2, r * Math.sin(th));
-      });
+    for (const seg of this.world.route.segments) for (const route of seg.routes) {
+      const pts = route.path.filter((_, k) => k % 2 === 0).map(([i, j]) =>
+        new THREE.Vector3(T.xOf(i), T.H[j * T.nx + i] + 0.5, T.zOf(j)));
       if (pts.length > 1) this.debug.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: '#ffffff', depthTest: false, transparent: true, opacity: 0.8 })));
+        new THREE.LineBasicMaterial({ color: ROUTE_COLORS[route.index], depthTest: false, transparent: true, opacity: 0.9 })));
     }
     const mk = new THREE.MeshBasicMaterial({ color: '#ff2bd6', depthTest: false });
     const geo = new THREE.SphereGeometry(0.5, 8, 6);
     for (const r of this.world.route.repairs) {
-      const rad = s.radius(r.theta, r.y + 1) + 0.6;
       const m = new THREE.Mesh(geo, mk);
-      m.position.set(rad * Math.cos(r.theta), r.y + 0.8, rad * Math.sin(r.theta));
+      m.position.set(r.x, r.y + 0.6, r.z);
       this.debug.add(m);
     }
     this.debug.visible = false;
@@ -249,7 +236,7 @@ export class WorldView {
   update(dt, camera, orbit = false) {
     this.time += dt;
     // cielo e nebbia sfumano con la quota della camera
-    const env = environmentAt(this.world, camera.position.y);
+    const env = environmentAt(this.world, camera.position.x, camera.position.z);
     const top = new THREE.Color(0, 0, 0), bottom = new THREE.Color(0, 0, 0), fog = new THREE.Color(0, 0, 0);
     let far = 0;
     for (const [b, w] of env.weights) {

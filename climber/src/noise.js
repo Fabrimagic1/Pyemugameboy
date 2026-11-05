@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // RUMORE (Perlin 3D "improved", con permutazione generata dal seed)
-// Usiamo il 3D anche se la parete è 2D (θ, y): campionando il rumore nel punto
-// (cos θ·r, y, sin θ·r) il pattern si richiude attorno alla montagna senza
-// cuciture e ha la stessa scala in tutte le direzioni.
+// Usiamo il 3D anche se il terreno è una heightmap: campionando in (x, y, z)
+// con y = quota, le pareti ripide ricevono variazioni anche in verticale
+// (bande, liane) invece di "stirare" il pattern del pianoro.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const fade = t => t * t * t * (t * (t * 6 - 15) + 10);

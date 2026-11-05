@@ -1,7 +1,8 @@
 // Prova il generatore in Node, senza browser:
 //   node climber/tools/test-gen.mjs [numero_di_seed]
-// Controlla: determinismo (stesso seed → stessa griglia), percorso valido, tempi.
+// Controlla: determinismo (stesso seed → stesso terreno), vie valide per ogni tratto, tempi.
 import { generateMountain } from '../src/generator.js';
+import { MIN_ROUTES } from '../src/rules.js';
 
 function digest(arr) {
   let h = 2166136261;
@@ -18,13 +19,13 @@ for (let k = 0; k < n; k++) {
   const a = generateMountain(seed);
   const ms = Date.now() - t;
   const b = generateMountain(seed);
-  const same = digest(a.surface.R) === digest(b.surface.R) && digest(a.surface.M) === digest(b.surface.M);
-  const biomes = a.layout.biomes.map(x => x.id).join(' > ');
-  const segs = a.route.segments.map(s => `${s.ok ? 'ok' : 'NO'}(${s.repairs})`).join(' ');
-  console.log(`${seed.padEnd(11)} ${ms}ms  H=${a.height.toFixed(0)}m  ${biomes}`);
-  console.log(`            tratti: ${segs}  props=${a.stats.props} cibo=${a.stats.food} deterministico=${same}`);
-  console.log(`            tempi: ${JSON.stringify(a.stats.timings)}`);
-  if (!same || !a.stats.allReachable) failures++;
+  const same = digest(a.terrain.H) === digest(b.terrain.H) && digest(a.terrain.M) === digest(b.terrain.M);
+  const biomes = a.layout.sections.map(x => x.id).join(' > ');
+  const segs = a.route.segments.map(s => `${s.ok ? '' : '✗'}${s.routes.map(r => r.kind[0]).join('')}(${s.repairs})`).join(' ');
+  console.log(`${seed.padEnd(11)} ${ms}ms  L=${a.length.toFixed(0)}m H=${a.height.toFixed(0)}m  ${biomes}`);
+  console.log(`            vie per tratto [s=sentiero m=misto p=parete](riparazioni): ${segs}`);
+  console.log(`            props=${a.stats.props} cibo=${a.stats.food} passaggi=${a.stats.passages} deterministico=${same}  ${JSON.stringify(a.stats.timings)}`);
+  if (!same || !a.stats.allOk) failures++;
 }
-console.log(failures ? `\n${failures} seed con problemi` : '\nTutti i seed sono deterministici e scalabili.');
+console.log(failures ? `\n${failures} seed con problemi` : `\nTutti i seed: deterministici, almeno ${MIN_ROUTES} vie per ogni tratto.`);
 process.exit(failures ? 1 : 0);

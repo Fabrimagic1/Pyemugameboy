@@ -2,16 +2,16 @@
 // REGOLE CONDIVISE
 // Queste costanti sono usate SIA dal generatore SIA dal giocatore.
 // È il punto chiave per una generazione procedurale "giusta": il generatore
-// verifica che la montagna sia scalabile usando esattamente le stesse regole
+// verifica che ogni tratto sia scalabile usando esattamente le stesse regole
 // di stamina che userà il giocatore. Se cambi il movimento, aggiorna qui.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// La montagna è una funzione r = R(θ, y) campionata su una griglia:
-// GRID_W colonne attorno alla montagna, una riga ogni GRID_DY metri di quota.
-export const GRID_W = 512;
-export const GRID_DY = 0.5;
+// Il mondo è una heightmap h(x, z): x = laterale, z = avanti (verso la vetta), y = quota.
+// Una cella ogni CELL metri.
+export const CELL = 0.6;
+export const SEA = -0.8;          // livello del mare
 
-// Materiali della superficie (uno per cella della griglia).
+// Materiali della superficie (uno per cella).
 export const MAT = { ROCK: 0, SAND: 1, ICE: 2, VINE: 3, LAVA: 4, SNOW: 5, MOSS: 6 };
 
 // climb = moltiplicatore del consumo di stamina mentre ci si arrampica.
@@ -28,39 +28,39 @@ export const MAT_INFO = [
 
 // Parametri dell'arrampicata (unità: stamina 0..1, metri, secondi).
 export const CLIMB = {
-  speedUp: 2.0,          // m/s in verticale
+  speedUp: 2.0,          // m/s lungo la parete
   speedSide: 1.7,        // m/s in orizzontale
-  drainPerMeter: 0.055,  // stamina consumata per metro su roccia verticale
+  drainPerMeter: 0.055,  // stamina per metro su roccia a 50°
   idleDrain: 0.025,      // stamina/s solo per restare attaccati
-  overhangK: 1.6,        // quanto pesano gli strapiombi
-  overhangMax: 2.6,      // moltiplicatore massimo (soffitto)
+  steepK: 0.6,           // quanto costa in più una parete verticale (a 90°: ×1.6)
   lungeCost: 0.2,        // scatto verso l'alto
   lungeSpeed: 8.0,
 };
 
-// Una superficie è "calpestabile" (ci si può riposare) se la componente verticale
-// della sua normale è almeno STAND_UP (0.64 ≈ pendenza max 50°).
+// Una superficie è "calpestabile" (ci si cammina e ci si riposa) se la componente
+// verticale della normale è almeno STAND_UP (0.64 ≈ pendenza max 50°).
 export const STAND_UP = 0.64;
+export const STEP = 0.6;          // gradino superabile camminando
 
 // Frazione di stamina che il validatore può spendere tra due punti di riposo.
 // <1 lascia margine per afflizioni (freddo, fame, ferite) che riducono la barra.
 export const ROUTE_SAFETY = 0.6;
 
-// dR/dy > 0 vuol dire che salendo la parete "esce" verso di te: strapiombo.
-export function overhangFactor(dRdy) {
-  return dRdy <= 0 ? 1 : Math.min(CLIMB.overhangMax, 1 + dRdy * CLIMB.overhangK);
+// Vie alternative tra due falò: il generatore ne garantisce almeno MIN_ROUTES,
+// distanti tra loro almeno ROUTE_SEPARATION metri (tranne vicino ai falò).
+export const MIN_ROUTES = 2;
+export const MAX_ROUTES = 3;
+export const ROUTE_SEPARATION = 11;
+
+const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+// up = componente verticale della normale (1 = piano, 0 = muro verticale)
+export function steepFactor(up) {
+  const ang = (Math.acos(Math.min(1, Math.max(0, up))) * 180) / Math.PI;
+  return 1 + CLIMB.steepK * clamp01((ang - 50) / 40);
 }
 
-// Costo in stamina di un movimento in arrampicata di `dist` metri.
-export function climbCost(dist, matId, dRdy, vertical) {
-  const f = MAT_INFO[matId].climb * overhangFactor(dRdy);
-  const speed = vertical ? CLIMB.speedUp : CLIMB.speedSide;
-  return dist * (CLIMB.drainPerMeter * f + CLIMB.idleDrain / speed);
-}
-
-// Pavimento dell'isola attorno alla montagna (spiaggia che scende in mare).
-export function islandFloor(r) {
-  if (r < 215) return 0;
-  if (r < 240) return -((r - 215) / 25) * 1.5;
-  return -1.5 - ((r - 240) / 60) * 4.5;
+// Costo in stamina di un movimento in arrampicata di `dist` metri (3D).
+export function climbCost(dist, matId, up) {
+  return dist * (CLIMB.drainPerMeter * MAT_INFO[matId].climb * steepFactor(up) + CLIMB.idleDrain / CLIMB.speedUp);
 }

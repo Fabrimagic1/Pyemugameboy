@@ -72,8 +72,7 @@ function start() {
   addEventListener('mouseup', e => { if (e.button === 0) mouseGrab = false; });
 
   // camera in terza persona
-  const sp = world.spawn;
-  let yaw = Math.atan2(Math.cos(sp.theta), Math.sin(sp.theta)), pitch = 0.15, dist = 6;
+  let yaw = Math.PI, pitch = 0.2, dist = 6;   // si guarda in avanti, verso la vetta
   addEventListener('mousemove', e => {
     if (document.pointerLockElement !== canvas) return;
     yaw -= e.movementX * 0.0025;
@@ -85,7 +84,7 @@ function start() {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   });
 
-  const S = world.surface;
+  const T = world.terrain;
   const target = new THREE.Vector3(), look = new THREE.Vector3(), cam = new THREE.Vector3();
   function placeCamera() {
     target.set(player.x, player.y + 1.5, player.z);
@@ -94,8 +93,7 @@ function start() {
     let d = 0.3;
     for (; d < dist; d += 0.2) {
       cam.copy(target).addScaledVector(look, -d);
-      const r = Math.hypot(cam.x, cam.z), th = Math.atan2(cam.z, cam.x);
-      if (S.radius(th, cam.y) + 0.3 > r) { d -= 0.2; break; }
+      if (T.height(cam.x, cam.z) + 0.4 > cam.y) { d -= 0.2; break; }
     }
     camera.position.copy(target).addScaledVector(look, -Math.max(0.3, d));
     camera.lookAt(target);
@@ -119,14 +117,16 @@ function start() {
     jumpQueued = false;
     player.update(dt, input, yaw);
 
-    pmesh.position.set(player.x, player.y, player.z);
+    // in arrampicata il corpo sta staccato dalla parete lungo la normale
+    const off = player.mode === 'climb' ? 0.45 : 0;
+    pmesh.position.set(player.x + player.nx * off, player.y + (player.mode === 'climb' ? -0.6 : 0), player.z + player.nz * off);
     pmesh.rotation.y = player.yaw;
     if (orbit) {
       // vista orbitale: tutta la montagna da fuori, per studiare la generazione
-      orbitT += dt * 0.12;
-      const H = world.height, D = H * 1.15;
-      camera.position.set(Math.cos(orbitT) * D, H * 0.55, Math.sin(orbitT) * D);
-      camera.lookAt(0, H * 0.42, 0);
+      orbitT += dt * 0.1;
+      const L = world.length, D = L * 0.75, cz = L * 0.5;
+      camera.position.set(Math.sin(orbitT) * D, world.height * 1.1, cz - Math.cos(orbitT) * D);
+      camera.lookAt(0, world.height * 0.35, cz);
     } else placeCamera();
     sun.position.set(player.x, player.y, player.z).addScaledVector(sunDir, 120);
     sun.target.position.set(player.x, player.y, player.z);
