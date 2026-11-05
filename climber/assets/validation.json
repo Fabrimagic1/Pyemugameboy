@@ -1,0 +1,112 @@
+{
+  "beach_rock.glb": {
+    "triangles": 96,
+    "bytes": 7944,
+    "height_m": 1.5,
+    "valid": true
+  },
+  "bush.glb": {
+    "triangles": 288,
+    "bytes": 22524,
+    "height_m": 1.4,
+    "valid": true
+  },
+  "cactus.glb": {
+    "triangles": 552,
+    "bytes": 41480,
+    "height_m": 2.86,
+    "valid": true
+  },
+  "campfire.glb": {
+    "triangles": 848,
+    "bytes": 63600,
+    "height_m": 0.3298,
+    "valid": true
+  },
+  "climber.glb": {
+    "triangles": 904,
+    "bytes": 182284,
+    "height_m": 1.75,
+    "valid": true
+  },
+  "giant_mushroom.glb": {
+    "triangles": 352,
+    "bytes": 27104,
+    "height_m": 3.7,
+    "valid": true
+  },
+  "glowing_lava_rock.glb": {
+    "triangles": 96,
+    "bytes": 8732,
+    "height_m": 1.1,
+    "valid": true
+  },
+  "ice_crystals.glb": {
+    "triangles": 144,
+    "bytes": 12116,
+    "height_m": 1.8,
+    "valid": true
+  },
+  "jungle_tree.glb": {
+    "triangles": 816,
+    "bytes": 61268,
+    "height_m": 5.805,
+    "valid": true
+  },
+  "obsidian_spike.glb": {
+    "triangles": 90,
+    "bytes": 8284,
+    "height_m": 2.8505,
+    "valid": true
+  },
+  "palm.glb": {
+    "triangles": 480,
+    "bytes": 37076,
+    "height_m": 4.9945,
+    "valid": true
+  },
+  "red_boulder.glb": {
+    "triangles": 96,
+    "bytes": 7956,
+    "height_m": 1.6,
+    "valid": true
+  },
+  "small_mushrooms.glb": {
+    "triangles": 1056,
+    "bytes": 77808,
+    "height_m": 0.8349,
+    "valid": true
+  },
+  "snow_pine.glb": {
+    "triangles": 192,
+    "bytes": 16260,
+    "height_m": 5.28,
+    "valid": true
+  },
+  "snow_rock.glb": {
+    "triangles": 96,
+    "bytes": 8668,
+    "height_m": 1.5,
+    "valid": true
+  },
+  "summit_flag.glb": {
+    "triangles": 136,
+    "bytes": 11516,
+    "height_m": 3.065,
+    "valid": true
+  },
+  "rock.jpg": {
+    "size": [
+      1024,
+      1024
+    ],
+    "format": "JPEG"
+  },
+  "ground.jpg": {
+    "size": [
+      1024,
+      1024
+    ],
+    "format": "JPEG"
+  }
+}

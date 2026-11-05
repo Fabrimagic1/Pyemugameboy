@@ -1,11 +1,41 @@
-# Asset da generare
+# Asset
+
+## Stato attuale
+
+Il pacchetto del 5 novembre 2026 è integrato: 2 texture, 15 oggetti e il personaggio animato.
+Provenienza e dettagli sono in `PROVENIENZA.md`, misure e triangoli in `model-info.json`, le
+anteprime in `preview-models.jpg` e `preview-animations.jpg`. Gli script che li rigenerano sono
+`tools/build_assets.py` e `tools/inspect_assets.py` (richiedono numpy e Pillow).
+
+Corrispondenza tra file e chiavi del gioco, come scritta in `manifest.json`:
+
+| File | Chiave | Note |
+|---|---|---|
+| `rock.jpg` / `ground.jpg` | `rock` / `ground` | dettaglio triplanare, normalizzato sulla luminosità media |
+| `climber.glb` | `character` | clip Idle/Walking/Running/Climbing/Falling; inclinazione verso la parete e tremore aggiunti dal gioco |
+| `campfire.glb` | `campfire` | la fiamma e la luce restano procedurali |
+| `palm.glb`, `beach_rock.glb` | `palm`, `rock` | |
+| `jungle_tree.glb`, `bush.glb` | `jungleTree` (scala 1,4), `bush` | |
+| `giant_mushroom.glb`, `small_mushrooms.glb` | `giantMushroom`, `smallMushroom` | il fungo gigante è alto 3,7 m (rimbalzo) |
+| `snow_pine.glb`, `ice_crystals.glb` | `pine` (scala 1,15), `iceShard` | |
+| `cactus.glb`, `red_boulder.glb` | `cactus`, `boulder` | |
+| `obsidian_spike.glb`, `glowing_lava_rock.glb` | `obsidian`, `emberRock` | |
+| `snow_rock.glb`, `summit_flag.glb` | `summitRock`, `summitFlag` | |
+
+I materiali PBR degli oggetti vengono convertiti in Lambert flat, molto più leggeri con centinaia
+di copie (`toLambert` in `src/render.js`); il personaggio resta PBR. Per tornare a un oggetto
+procedurale, togli la sua riga dal manifest.
+
+---
+
+## Specifiche (per sostituire o aggiungere asset)
 
 Il gioco funziona già senza asset esterni: tutto è procedurale. Ogni asset che aggiungi qui
 **sostituisce** la sua versione procedurale. Puoi aggiungerli uno alla volta.
 
 ## Come aggiungerne uno
 
-1. Metti il file in `models/` (GLB) o `textures/` (JPG/PNG).
+1. Metti il file in questa cartella (GLB per i modelli, JPG/PNG per le texture).
 2. Aggiungilo in `manifest.json` (prendi `manifest.example.json` come esempio):
    ```json
    { "models": { "palm": "models/palm.glb" }, "textures": {}, "character": null }

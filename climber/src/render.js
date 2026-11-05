@@ -54,6 +54,18 @@ function primitive(p) {
   }
 }
 
+// I GLB arrivano con materiali PBR: con centinaia di copie costano troppo.
+// Per oggetti a colori piatti un Lambert flat è identico a vedersi e molto più leggero.
+const lambertCache = new Map();
+function toLambert(m) {
+  if (m.map || m.isMeshLambertMaterial) return m;          // con texture: lascialo com'è
+  if (!lambertCache.has(m)) lambertCache.set(m, new THREE.MeshLambertMaterial({
+    color: m.color, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity ?? 1, flatShading: true,
+    transparent: m.transparent, opacity: m.opacity, side: m.side,
+  }));
+  return lambertCache.get(m);
+}
+
 // Le parti di un oggetto (procedurale o GLB) come coppie {geometry, material, matrix}.
 function modelParts(type, assets) {
   const ext = assets && assets.models[type];
@@ -64,7 +76,7 @@ function modelParts(type, assets) {
     ext.scene.traverse(o => {
       if (!o.isMesh) return;
       if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();   // alcuni modelli AI non le hanno
-      parts.push({ geometry: o.geometry, material: o.material, matrix: S.clone().multiply(o.matrixWorld) });
+      parts.push({ geometry: o.geometry, material: toLambert(o.material), matrix: S.clone().multiply(o.matrixWorld) });
     });
     return parts;
   }
@@ -233,10 +245,18 @@ export class WorldView {
   buildSummit() {
     const g = new THREE.Group();
     g.position.set(this.world.peak.x, this.world.peak.y, this.world.peak.z);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.5, 6), new THREE.MeshLambertMaterial({ color: '#dddddd' }));
-    pole.position.y = 1.75; g.add(pole);
-    this.flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), new THREE.MeshLambertMaterial({ color: '#e8452c', side: THREE.DoubleSide }));
-    this.flag.position.set(0.8, 3, 0); g.add(this.flag);
+    const ext = this.assets.models.summitFlag;
+    if (ext) {
+      // il modello ha già asta e bandiera: la facciamo oscillare tutta insieme
+      this.flag = ext.scene.clone(); this.flag.scale.setScalar(ext.scale);
+      this.flag.traverse(o => { if (o.isMesh) o.castShadow = true; });
+      g.add(this.flag);
+    } else {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.5, 6), new THREE.MeshLambertMaterial({ color: '#dddddd' }));
+      pole.position.y = 1.75; g.add(pole);
+      this.flag = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), new THREE.MeshLambertMaterial({ color: '#e8452c', side: THREE.DoubleSide }));
+      this.flag.position.set(0.8, 3, 0); g.add(this.flag);
+    }
     this.scene.add(g);
   }
 
@@ -303,7 +323,7 @@ export class WorldView {
       f.flame.scale.set(1, k, 1);
       f.light.intensity = 16 * k;
     }
-    this.flag.rotation.y = Math.sin(this.time * 2) * 0.3;
+    this.flag.rotation.y = Math.sin(this.time * 2) * (this.assets.models.summitFlag ? 0.12 : 0.3);
     if (this.world.food.length) this.updateFood();
   }
 }

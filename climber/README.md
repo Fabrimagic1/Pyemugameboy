@@ -232,7 +232,8 @@ Se metti un personaggio GLB con animazioni in `assets/manifest.json`, viene usat
 
 ## 5. Asset
 
-Tutto funziona senza file esterni. In `assets/README.md` c'è l'elenco degli asset da far generare
+Gli asset low-poly sono inclusi in `assets/`: personaggio animato, 15 oggetti dei biomi e 2 texture
+del terreno. Senza di loro il gioco torna alle versioni procedurali. In `assets/README.md` c'è l'elenco degli asset da far generare
 a un'AI, con dimensioni, perno, numero di triangoli e un prompt per ciascuno: personaggio, 2 texture
 del terreno, 14 oggetti dei biomi, falò. Ogni file che aggiungi in `assets/manifest.json`
 sostituisce la sua versione procedurale.

@@ -41,11 +41,25 @@ export async function loadAssets(base = 'assets/') {
   await Promise.all(Object.entries(manifest.textures || {}).map(([name, file]) => new Promise(res => {
     tl.load(base + file, tex => {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.userData.avgLum = averageLuminance(tex.image);
       tex.anisotropy = 8;
       out.textures[name] = tex; res();
     }, undefined, () => { console.warn(`Texture "${name}" non caricata (${file})`); res(); });
   })));
   return out;
+}
+
+// Luminosità media di un'immagine: serve a usare la texture come dettaglio
+// "centrato su 1", così una texture scura non scurisce tutto il terreno.
+function averageLuminance(image) {
+  try {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+    const ctx = cv.getContext('2d'); ctx.drawImage(image, 0, 0, 32, 32);
+    const d = ctx.getImageData(0, 0, 32, 32).data;
+    let s = 0;
+    for (let i = 0; i < d.length; i += 4) s += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return Math.max(0.05, s / (d.length / 4) / 255);
+  } catch { return 0.5; }
 }
 
 // Texture di dettaglio procedurali (grigie, ripetibili) usate se non ne fornisci tu.
@@ -88,19 +102,23 @@ export function proceduralDetail(kind, size = 256, seed = 1) {
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
+  tex.userData.avgLum = averageLuminance(cv);
   return tex;
 }
 
 // Aggiunge al materiale del terreno una texture "triplanare": proiettata dai
 // tre assi e mescolata secondo la normale, così non si stira sulle pareti.
 // Le pareti usano `rock`, i pianori `ground`. Le texture vengono usate come
-// dettaglio in scala di grigi che moltiplica il colore dei vertici.
+// dettaglio in scala di grigi (diviso per la luminosità media) che moltiplica
+// il colore dei vertici: i colori dei biomi restano, la texture aggiunge il disegno.
 export function addTriplanarDetail(material, rock, ground, scale = 0.3, strength = 0.6) {
   material.onBeforeCompile = shader => {
     shader.uniforms.uRock = { value: rock };
     shader.uniforms.uGround = { value: ground };
     shader.uniforms.uScale = { value: scale };
     shader.uniforms.uStrength = { value: strength };
+    shader.uniforms.uRockAvg = { value: rock.userData.avgLum || 0.5 };
+    shader.uniforms.uGroundAvg = { value: ground.userData.avgLum || 0.5 };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNorm;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);');
@@ -108,6 +126,7 @@ export function addTriplanarDetail(material, rock, ground, scale = 0.3, strength
       .replace('#include <common>', `#include <common>
 varying vec3 vWPos; varying vec3 vWNorm;
 uniform sampler2D uRock; uniform sampler2D uGround; uniform float uScale; uniform float uStrength;
+uniform float uRockAvg; uniform float uGroundAvg;
 float tpLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 {
@@ -116,8 +135,8 @@ float tpLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }`)
           + tpLum(texture2D(uRock, vWPos.xz * uScale).rgb) * bw.y
           + tpLum(texture2D(uRock, vWPos.xy * uScale).rgb) * bw.z;
   float g = tpLum(texture2D(uGround, vWPos.xz * uScale * 1.6).rgb);
-  float d = mix(r, g, smoothstep(0.55, 0.8, vWNorm.y));
-  diffuseColor.rgb *= mix(1.0, d * 1.65, uStrength);
+  float d = mix(r / uRockAvg, g / uGroundAvg, smoothstep(0.55, 0.8, vWNorm.y));
+  diffuseColor.rgb *= mix(1.0, clamp(d, 0.3, 1.8), uStrength);
 }`);
   };
 }

@@ -1,15 +1,15 @@
 {
   "models": {
-    "palm": "models/palm.glb",
-    "jungleTree": { "file": "models/jungle_tree.glb", "scale": 1.0 },
-    "campfire": "models/campfire.glb"
+    "palm": "palm.glb",
+    "jungleTree": { "file": "jungle_tree.glb", "scale": 1.0 },
+    "campfire": "campfire.glb"
   },
   "textures": {
-    "rock": "textures/rock.jpg",
-    "ground": "textures/ground.jpg"
+    "rock": "rock.jpg",
+    "ground": "ground.jpg"
   },
   "character": {
-    "file": "models/climber.glb",
+    "file": "climber.glb",
     "scale": 1.0,
     "rotateY": 180,
     "clips": { "idle": "Idle", "walk": "Walking", "run": "Running", "climb": "Climbing", "fall": "Falling" }

@@ -1,0 +1,306 @@
+{
+  "campfire": {
+    "file": "campfire.glb",
+    "dimensions_m": [
+      1.68,
+      0.33,
+      1.606
+    ],
+    "bounds_min": [
+      -0.855,
+      0.0,
+      -0.785
+    ],
+    "bounds_max": [
+      0.825,
+      0.33,
+      0.821
+    ],
+    "triangles": 848
+  },
+  "palm": {
+    "file": "palm.glb",
+    "dimensions_m": [
+      5.024,
+      4.994,
+      3.994
+    ],
+    "bounds_min": [
+      -0.229,
+      0.0,
+      -1.997
+    ],
+    "bounds_max": [
+      4.795,
+      4.994,
+      1.997
+    ],
+    "triangles": 480
+  },
+  "beach_rock": {
+    "file": "beach_rock.glb",
+    "dimensions_m": [
+      2.234,
+      1.5,
+      1.966
+    ],
+    "bounds_min": [
+      -1.181,
+      0.0,
+      -1.008
+    ],
+    "bounds_max": [
+      1.052,
+      1.5,
+      0.958
+    ],
+    "triangles": 96
+  },
+  "jungle_tree": {
+    "file": "jungle_tree.glb",
+    "dimensions_m": [
+      5.092,
+      5.805,
+      4.508
+    ],
+    "bounds_min": [
+      -2.545,
+      0.0,
+      -2.267
+    ],
+    "bounds_max": [
+      2.548,
+      5.805,
+      2.241
+    ],
+    "triangles": 816
+  },
+  "bush": {
+    "file": "bush.glb",
+    "dimensions_m": [
+      2.185,
+      1.4,
+      1.746
+    ],
+    "bounds_min": [
+      -1.117,
+      0.0,
+      -0.743
+    ],
+    "bounds_max": [
+      1.068,
+      1.4,
+      1.003
+    ],
+    "triangles": 288
+  },
+  "giant_mushroom": {
+    "file": "giant_mushroom.glb",
+    "dimensions_m": [
+      3.3,
+      3.7,
+      3.3
+    ],
+    "bounds_min": [
+      -1.65,
+      0.0,
+      -1.65
+    ],
+    "bounds_max": [
+      1.65,
+      3.7,
+      1.65
+    ],
+    "triangles": 368
+  },
+  "small_mushrooms": {
+    "file": "small_mushrooms.glb",
+    "dimensions_m": [
+      1.28,
+      0.835,
+      1.06
+    ],
+    "bounds_min": [
+      -0.62,
+      0.0,
+      -0.54
+    ],
+    "bounds_max": [
+      0.66,
+      0.835,
+      0.52
+    ],
+    "triangles": 1104
+  },
+  "snow_pine": {
+    "file": "snow_pine.glb",
+    "dimensions_m": [
+      3.0,
+      5.28,
+      2.853
+    ],
+    "bounds_min": [
+      -1.5,
+      0.0,
+      -1.427
+    ],
+    "bounds_max": [
+      1.5,
+      5.28,
+      1.427
+    ],
+    "triangles": 352
+  },
+  "ice_crystals": {
+    "file": "ice_crystals.glb",
+    "dimensions_m": [
+      1.37,
+      1.8,
+      0.931
+    ],
+    "bounds_min": [
+      -0.62,
+      0.0,
+      -0.591
+    ],
+    "bounds_max": [
+      0.75,
+      1.8,
+      0.341
+    ],
+    "triangles": 192
+  },
+  "cactus": {
+    "file": "cactus.glb",
+    "dimensions_m": [
+      1.62,
+      2.86,
+      0.648
+    ],
+    "bounds_min": [
+      -0.81,
+      0.0,
+      -0.324
+    ],
+    "bounds_max": [
+      0.81,
+      2.86,
+      0.325
+    ],
+    "triangles": 720
+  },
+  "red_boulder": {
+    "file": "red_boulder.glb",
+    "dimensions_m": [
+      2.439,
+      1.6,
+      1.833
+    ],
+    "bounds_min": [
+      -1.278,
+      0.0,
+      -1.013
+    ],
+    "bounds_max": [
+      1.16,
+      1.6,
+      0.82
+    ],
+    "triangles": 96
+  },
+  "obsidian_spike": {
+    "file": "obsidian_spike.glb",
+    "dimensions_m": [
+      1.587,
+      2.851,
+      1.236
+    ],
+    "bounds_min": [
+      -0.639,
+      0.0,
+      -0.618
+    ],
+    "bounds_max": [
+      0.948,
+      2.851,
+      0.618
+    ],
+    "triangles": 120
+  },
+  "glowing_lava_rock": {
+    "file": "glowing_lava_rock.glb",
+    "dimensions_m": [
+      1.856,
+      1.1,
+      1.404
+    ],
+    "bounds_min": [
+      -0.9,
+      0.0,
+      -0.739
+    ],
+    "bounds_max": [
+      0.956,
+      1.1,
+      0.665
+    ],
+    "triangles": 96
+  },
+  "snow_rock": {
+    "file": "snow_rock.glb",
+    "dimensions_m": [
+      2.13,
+      1.5,
+      1.668
+    ],
+    "bounds_min": [
+      -0.939,
+      0.0,
+      -0.812
+    ],
+    "bounds_max": [
+      1.19,
+      1.5,
+      0.857
+    ],
+    "triangles": 96
+  },
+  "summit_flag": {
+    "file": "summit_flag.glb",
+    "dimensions_m": [
+      1.093,
+      3.065,
+      0.215
+    ],
+    "bounds_min": [
+      -0.058,
+      0.0,
+      -0.109
+    ],
+    "bounds_max": [
+      1.035,
+      3.065,
+      0.106
+    ],
+    "triangles": 136
+  },
+  "climber": {
+    "file": "climber.glb",
+    "dimensions_m": [
+      1.772,
+      1.75,
+      0.5
+    ],
+    "bounds_min": [
+      -0.886,
+      0.0,
+      -0.275
+    ],
+    "bounds_max": [
+      0.886,
+      1.75,
+      0.225
+    ],
+    "triangles": 904
+  }
+}

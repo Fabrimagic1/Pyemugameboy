@@ -83,8 +83,14 @@ export class Character {
     const model = def.scene;
     model.rotation.y = ((def.rotateY ?? 180) * Math.PI) / 180;   // i GLB guardano verso +Z, noi verso -Z
     model.scale.setScalar(def.scale ?? 1);
-    model.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    this.root.add(model);
+    // le mesh con skin si deformano: il bounding box statico non basta per il culling
+    model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+    // gruppo intermedio per inclinare il corpo verso la parete (le clip non lo fanno)
+    this.lean = new THREE.Group();
+    this.lean.position.y = 0.9;      // ruota attorno al bacino, non ai piedi
+    model.position.y = -0.9;
+    this.lean.add(model);
+    this.root.add(this.lean);
     this.mixer = new THREE.AnimationMixer(model);
     this.actions = {};
     const clips = def.clips || {};
@@ -181,5 +187,9 @@ export class Character {
     }
     if (a) a.timeScale = climbing ? Math.min(1.5, speed / 1.5) : 1;   // in parete: ferma se non ti muovi
     this.mixer.update(dt);
+    // inclinazione verso la parete + tremore quando la stamina è quasi finita (come nel procedurale)
+    const shake = climbing && p.stamina < 0.25 ? (0.25 - p.stamina) * 0.25 : 0;
+    const lean = climbing ? -(Math.PI / 2 - this.wallLean) * 0.6 : 0;
+    this.lean.rotation.set(lean + (Math.random() - 0.5) * shake, 0, (Math.random() - 0.5) * shake);
   }
 }
