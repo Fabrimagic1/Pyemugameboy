@@ -76,6 +76,13 @@ Then open <http://localhost:8000/web/>.
 └── requirements.txt   # Python dependencies
 ```
 
+## Cima Procedurale (`climber/`)
+
+A separate browser prototype in this repository: a 3D climbing game where a mountain of stacked
+biomes is generated procedurally from a daily seed, with a validator that guarantees every
+mountain can be climbed. Documentation (in Italian) is in [`climber/README.md`](climber/README.md).
+Run `python -m http.server 8000` from the repository root and open <http://localhost:8000/climber/>.
+
 ## Legal notice
 
 - This emulator does **not** include Nintendo's boot ROM; it starts from the post-boot register state.

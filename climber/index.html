@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cima Procedurale</title>
+<style>
+  :root {
+    --panel: rgba(16, 20, 26, 0.78);
+    --text: #f2f4f6;
+    --muted: #aab3bd;
+    --accent: #ffa630;
+    --stamina: #7fd36b;
+    --hunger: #e9c34a;
+    --cold: #7cc7ff;
+    --heat: #ff7a3d;
+    --injury: #e2404f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1116; color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #game canvas { display: block; }
+  .panel { position: fixed; background: var(--panel); border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(4px); }
+  #top { top: 12px; left: 12px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 24px); }
+  #top b { color: var(--accent); }
+  #top form { display: flex; gap: 6px; }
+  #top input { width: 120px; background: #222a33; border: 1px solid #3a4552; color: var(--text); border-radius: 6px; padding: 4px 8px; }
+  button { background: #2c3742; color: var(--text); border: 1px solid #3f4b58; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { background: #384654; }
+  #status { bottom: 18px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); }
+  #status .row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  #status .row span:first-child { color: var(--text); font-weight: 600; }
+  .bar { position: relative; height: 16px; background: #2a323b; border-radius: 8px; overflow: hidden; display: flex; }
+  .bar > div { height: 100%; transition: width .1s linear; }
+  #bar-stamina { background: var(--stamina); }
+  #bar-stamina.low { background: #f0d050; }
+  .afflictions { position: absolute; right: 0; top: 0; height: 100%; display: flex; flex-direction: row-reverse; }
+  .afflictions > div { height: 100%; }
+  #bar-hunger { background: var(--hunger); } #bar-cold { background: var(--cold); }
+  #bar-heat { background: var(--heat); } #bar-injury { background: var(--injury); }
+  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  #toasts { position: fixed; top: 30%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+  .toast { background: var(--panel); padding: 6px 14px; border-radius: 8px; animation: fade 3.2s forwards; }
+  @keyframes fade { 0%, 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
+  #help { top: 12px; right: 12px; max-width: 300px; font-size: 13px; }
+  #help h3 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+  #help kbd { background: #2c3742; border-radius: 4px; padding: 0 5px; font: 12px monospace; }
+  #help p { margin: 3px 0; }
+  #map { inset: 12px; display: flex; gap: 16px; padding: 14px; overflow: auto; }
+  #map .wrap { position: relative; flex: 0 0 auto; height: calc(100vh - 52px); aspect-ratio: var(--ar, 0.6); }
+  #map canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; border-radius: 6px; }
+  #map pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; color: var(--muted); }
+  #map h3 { margin: 0 0 8px; color: var(--accent); }
+  #loading, #win { inset: 0; border-radius: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; font-size: 18px; }
+  #win h1 { color: var(--accent); margin: 0 0 8px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 700px) { #help { display: none; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="top" class="panel">
+  <span>Montagna: <b id="seed-label">…</b></span>
+  <button id="btn-today" title="La stessa montagna per tutti, oggi">Oggi</button>
+  <button id="btn-random">Casuale</button>
+  <form id="seed-form"><input id="seed-input" placeholder="seed" aria-label="seed"><button>Vai</button></form>
+</div>
+
+<div id="status" class="panel">
+  <div class="row"><span id="biome"></span><span id="mode"></span><span id="alt"></span></div>
+  <div class="bar"><div id="bar-stamina"></div>
+    <div class="afflictions"><div id="bar-injury"></div><div id="bar-heat"></div><div id="bar-cold"></div><div id="bar-hunger"></div></div>
+  </div>
+  <div class="legend"><span><i style="background:var(--stamina)"></i>stamina</span><span><i style="background:var(--hunger)"></i>fame</span>
+    <span><i style="background:var(--cold)"></i>freddo</span><span><i style="background:var(--heat)"></i>caldo</span><span><i style="background:var(--injury)"></i>ferite</span></div>
+</div>
+
+<div id="help" class="panel" hidden>
+  <h3>Comandi</h3>
+  <p>Clic sullo schermo per catturare il mouse</p>
+  <p><kbd>WASD</kbd> muoviti · <kbd>Shift</kbd> corri · <kbd>Spazio</kbd> salta</p>
+  <p>Tieni <kbd>clic sinistro</kbd> o <kbd>E</kbd> vicino a una parete per arrampicarti; <kbd>Spazio</kbd> = scatto</p>
+  <p><kbd>M</kbd> mappa della generazione · <kbd>P</kbd> percorso garantito in 3D</p>
+  <p><kbd>O</kbd> vista orbitale · <kbd>R</kbd> torna al falò · <kbd>H</kbd> nascondi aiuto</p>
+  <p style="color:var(--muted)">Ghiaccio e strapiombi consumano più stamina, le liane meno. Falò = checkpoint e calore.</p>
+</div>
+
+<div id="map" class="panel" hidden>
+  <div class="wrap" id="map-wrap"><canvas id="map-canvas"></canvas><canvas id="map-overlay"></canvas></div>
+  <div>
+    <h3>Come è stata generata questa montagna</h3>
+    <pre id="map-stats"></pre>
+    <div class="legend" style="margin-top:12px">
+      <span><i style="background:#fff"></i>percorso garantito</span><span><i style="background:#ff2bd6"></i>nicchia di riparazione</span>
+      <span><i style="background:#ffa630"></i>falò</span><span><i style="background:#ffe600"></i>tu</span>
+      <span><i style="background:#96d2f0"></i>ghiaccio</span><span><i style="background:#3c9632"></i>liane</span><span><i style="background:#ff5a14"></i>lava</span>
+    </div>
+    <pre style="margin-top:12px">Asse X = angolo attorno alla montagna (0–360°)
+Asse Y = quota. Colori chiari = cenge calpestabili,
+scuri = strapiombi. Premi M per chiudere.</pre>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="loading" class="panel">Generazione della montagna…</div>
+<div id="win" class="panel" hidden><h1>Vetta raggiunta!</h1><p>Prova la montagna di domani, o un seed casuale.</p></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
