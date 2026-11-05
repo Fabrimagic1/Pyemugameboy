@@ -1,6 +1,6 @@
 # Bestiario di MONSTER DUNGEON
 
-120 mostri: 4 elementi x 10 famiglie x 3 stadi. Ogni famiglia si evolve al livello **16** (stadio 2) e al livello **36** (stadio 3). I mostri salgono fino al livello **100**.
+30 mostri: 10 famiglie x 3 stadi (3 di Terra, 2 di Acqua, 3 di Fuoco, 2 di Vento). Ogni famiglia si evolve al livello **16** (stadio 2) e al livello **36** (stadio 3). I mostri salgono fino al livello **100**.
 
 Le statistiche base sono `PS / ATT / DIF / VEL`; a livello L: `stat = base*L/50 + 5` e `PS = base*L/50 + L + 10`.
 
@@ -19,182 +19,92 @@ Le mosse si sbloccano ai livelli **1, 8, 22, 40**. Vedi [MOSSE.md](MOSSE.md).
 | 7 | ROCC | 3 | 1 | 51 | 56 | 76 | 30 | SASSATA | CORNATA | SPINE | TERREMOTO |
 | 8 | ROCCON | 3 | 2 | 64 | 77 | 98 | 49 | SASSATA | COLPO | SPINE | TERREMOTO |
 | 9 | ROCCORAX | 3 | 3 | 76 | 95 | 118 | 65 | SASSATA | MORSO | SPINE | MONTAGNA |
-| 10 | BORL | 4 | 1 | 81 | 55 | 51 | 20 | RADICI | COLPO | GELO | TERREMOTO |
-| 11 | BORLON | 4 | 2 | 109 | 78 | 66 | 36 | RADICI | MORSO | GELO | TERREMOTO |
-| 12 | BORLORAX | 4 | 3 | 132 | 97 | 78 | 50 | RADICI | CORNATA | GELO | MONTAGNA |
-| 13 | DUNA | 5 | 1 | 79 | 44 | 52 | 38 | SASSATA | MORSO | FRANA | TERREMOTO |
-| 14 | DUNAON | 5 | 2 | 97 | 56 | 62 | 55 | SASSATA | CORNATA | FRANA | TERREMOTO |
-| 15 | DUNAORAX | 5 | 3 | 123 | 74 | 77 | 79 | SASSATA | COLPO | FRANA | MONTAGNA |
-| 16 | KRAG | 6 | 1 | 72 | 31 | 64 | 20 | RADICI | CORNATA | TAGLIO | TERREMOTO |
-| 17 | KRAGON | 6 | 2 | 101 | 46 | 87 | 40 | RADICI | COLPO | TAGLIO | TERREMOTO |
-| 18 | KRAGORAX | 6 | 3 | 127 | 60 | 109 | 59 | RADICI | MORSO | TAGLIO | MONTAGNA |
-| 19 | SASS | 7 | 1 | 78 | 42 | 74 | 20 | SASSATA | COLPO | SPINE | TERREMOTO |
-| 20 | SASSON | 7 | 2 | 106 | 59 | 98 | 24 | SASSATA | MORSO | SPINE | TERREMOTO |
-| 21 | SASSORAX | 7 | 3 | 127 | 73 | 117 | 34 | SASSATA | CORNATA | SPINE | MONTAGNA |
-| 22 | TUFO | 8 | 1 | 64 | 53 | 62 | 20 | RADICI | MORSO | LAVA | TERREMOTO |
-| 23 | TUFOON | 8 | 2 | 83 | 73 | 79 | 30 | RADICI | CORNATA | LAVA | TERREMOTO |
-| 24 | TUFOORAX | 8 | 3 | 103 | 95 | 99 | 46 | RADICI | COLPO | LAVA | MONTAGNA |
-| 25 | ARGI | 9 | 1 | 77 | 47 | 67 | 20 | SASSATA | CORNATA | FRANA | TERREMOTO |
-| 26 | ARGION | 9 | 2 | 103 | 68 | 89 | 21 | SASSATA | COLPO | FRANA | TERREMOTO |
-| 27 | ARGIORAX | 9 | 3 | 124 | 83 | 106 | 31 | SASSATA | MORSO | FRANA | MONTAGNA |
-| 28 | PIET | 10 | 1 | 57 | 53 | 56 | 29 | RADICI | COLPO | ONDATA | TERREMOTO |
-| 29 | PIETON | 10 | 2 | 75 | 75 | 73 | 50 | RADICI | MORSO | ONDATA | TERREMOTO |
-| 30 | PIETORAX | 10 | 3 | 95 | 100 | 92 | 74 | RADICI | CORNATA | ONDATA | MONTAGNA |
 
 Linee evolutive:
 
 - GROK -> GROKON -> GROKORAX
 - MOLD -> MOLDON -> MOLDORAX
 - ROCC -> ROCCON -> ROCCORAX
-- BORL -> BORLON -> BORLORAX
-- DUNA -> DUNAON -> DUNAORAX
-- KRAG -> KRAGON -> KRAGORAX
-- SASS -> SASSON -> SASSORAX
-- TUFO -> TUFOON -> TUFOORAX
-- ARGI -> ARGION -> ARGIORAX
-- PIET -> PIETON -> PIETORAX
+- 
+- 
+- 
+- 
+- 
+- 
+- 
 
 ## ACQUA
 
 | ID | Nome | Fam. | Stadio | PS | ATT | DIF | VEL | Mossa Lv1 | Mossa Lv8 | Mossa Lv22 | Mossa Lv40 |
 |---:|------|-----:|-------:|---:|----:|----:|----:|---|---|---|---|
-| 31 | NELO | 1 | 1 | 49 | 38 | 58 | 58 | SPRUZZO | COLPO | ONDATA | TSUNAMI |
-| 32 | NELOON | 1 | 2 | 65 | 57 | 81 | 81 | SPRUZZO | MORSO | ONDATA | TSUNAMI |
-| 33 | NELOORAX | 1 | 3 | 79 | 72 | 100 | 102 | SPRUZZO | CORNATA | ONDATA | ABISSO |
-| 34 | MARI | 2 | 1 | 60 | 49 | 39 | 44 | BOLLA | MORSO | TAGLIO | TSUNAMI |
-| 35 | MARION | 2 | 2 | 88 | 79 | 59 | 67 | BOLLA | CORNATA | TAGLIO | TSUNAMI |
-| 36 | MARIORAX | 2 | 3 | 105 | 97 | 71 | 81 | BOLLA | COLPO | TAGLIO | ABISSO |
-| 37 | ONDI | 3 | 1 | 54 | 59 | 49 | 49 | SPRUZZO | CORNATA | GELO | TSUNAMI |
-| 38 | ONDION | 3 | 2 | 71 | 84 | 67 | 67 | SPRUZZO | COLPO | GELO | TSUNAMI |
-| 39 | ONDIORAX | 3 | 3 | 88 | 108 | 84 | 85 | SPRUZZO | MORSO | GELO | ABISSO |
-| 40 | PLUV | 4 | 1 | 69 | 42 | 52 | 54 | BOLLA | COLPO | LAVA | TSUNAMI |
-| 41 | PLUVON | 4 | 2 | 90 | 59 | 69 | 72 | BOLLA | MORSO | LAVA | TSUNAMI |
-| 42 | PLUVORAX | 4 | 3 | 112 | 76 | 87 | 91 | BOLLA | CORNATA | LAVA | ABISSO |
-| 43 | SALI | 5 | 1 | 71 | 42 | 48 | 40 | SPRUZZO | MORSO | ONDATA | TSUNAMI |
-| 44 | SALION | 5 | 2 | 99 | 63 | 68 | 57 | SPRUZZO | CORNATA | ONDATA | TSUNAMI |
-| 45 | SALIORAX | 5 | 3 | 121 | 80 | 85 | 71 | SPRUZZO | COLPO | ONDATA | ABISSO |
-| 46 | LIMP | 6 | 1 | 63 | 51 | 49 | 52 | BOLLA | CORNATA | FRANA | TSUNAMI |
-| 47 | LIMPON | 6 | 2 | 77 | 66 | 61 | 66 | BOLLA | COLPO | FRANA | TSUNAMI |
-| 48 | LIMPORAX | 6 | 3 | 97 | 86 | 78 | 85 | BOLLA | MORSO | FRANA | ABISSO |
-| 49 | GORG | 7 | 1 | 63 | 57 | 49 | 42 | SPRUZZO | COLPO | GELO | TSUNAMI |
-| 50 | GORGON | 7 | 2 | 79 | 76 | 62 | 55 | SPRUZZO | MORSO | GELO | TSUNAMI |
-| 51 | GORGORAX | 7 | 3 | 100 | 101 | 80 | 71 | SPRUZZO | CORNATA | GELO | ABISSO |
-| 52 | BOLL | 8 | 1 | 67 | 51 | 37 | 61 | BOLLA | MORSO | FULMINE | TSUNAMI |
-| 53 | BOLLON | 8 | 2 | 85 | 68 | 47 | 79 | BOLLA | CORNATA | FULMINE | TSUNAMI |
-| 54 | BOLLORAX | 8 | 3 | 107 | 90 | 60 | 102 | BOLLA | COLPO | FULMINE | ABISSO |
-| 55 | ACQU | 9 | 1 | 58 | 54 | 38 | 52 | SPRUZZO | CORNATA | ONDATA | TSUNAMI |
-| 56 | ACQUON | 9 | 2 | 78 | 78 | 52 | 74 | SPRUZZO | COLPO | ONDATA | TSUNAMI |
-| 57 | ACQUORAX | 9 | 3 | 99 | 104 | 67 | 96 | SPRUZZO | MORSO | ONDATA | ABISSO |
-| 58 | ABIS | 10 | 1 | 55 | 31 | 62 | 52 | BOLLA | COLPO | FIAMMATA | TSUNAMI |
-| 59 | ABISON | 10 | 2 | 74 | 46 | 87 | 73 | BOLLA | MORSO | FIAMMATA | TSUNAMI |
-| 60 | ABISORAX | 10 | 3 | 90 | 59 | 108 | 91 | BOLLA | CORNATA | FIAMMATA | ABISSO |
+| 10 | NELO | 4 | 1 | 77 | 51 | 39 | 43 | BOLLA | COLPO | LAVA | TSUNAMI |
+| 11 | NELOON | 4 | 2 | 105 | 74 | 54 | 60 | BOLLA | MORSO | LAVA | TSUNAMI |
+| 12 | NELOORAX | 4 | 3 | 128 | 93 | 66 | 74 | BOLLA | CORNATA | LAVA | ABISSO |
+| 13 | MARI | 5 | 1 | 75 | 40 | 40 | 62 | SPRUZZO | MORSO | ONDATA | TSUNAMI |
+| 14 | MARION | 5 | 2 | 93 | 52 | 50 | 79 | SPRUZZO | CORNATA | ONDATA | TSUNAMI |
+| 15 | MARIORAX | 5 | 3 | 119 | 70 | 65 | 103 | SPRUZZO | COLPO | ONDATA | ABISSO |
 
 Linee evolutive:
 
+- 
+- 
+- 
 - NELO -> NELOON -> NELOORAX
 - MARI -> MARION -> MARIORAX
-- ONDI -> ONDION -> ONDIORAX
-- PLUV -> PLUVON -> PLUVORAX
-- SALI -> SALION -> SALIORAX
-- LIMP -> LIMPON -> LIMPORAX
-- GORG -> GORGON -> GORGORAX
-- BOLL -> BOLLON -> BOLLORAX
-- ACQU -> ACQUON -> ACQUORAX
-- ABIS -> ABISON -> ABISORAX
+- 
+- 
+- 
+- 
+- 
 
 ## FUOCO
 
 | ID | Nome | Fam. | Stadio | PS | ATT | DIF | VEL | Mossa Lv1 | Mossa Lv8 | Mossa Lv22 | Mossa Lv40 |
 |---:|------|-----:|-------:|---:|----:|----:|----:|---|---|---|---|
-| 61 | PIRO | 1 | 1 | 64 | 61 | 28 | 41 | SCINTILLA | COLPO | FIAMMATA | INFERNO |
-| 62 | PIROON | 1 | 2 | 95 | 80 | 43 | 58 | SCINTILLA | MORSO | FIAMMATA | INFERNO |
-| 63 | PIROORAX | 1 | 3 | 118 | 95 | 56 | 71 | SCINTILLA | CORNATA | FIAMMATA | ERUZIONE |
-| 64 | FIAM | 2 | 1 | 32 | 59 | 33 | 76 | BRACE | MORSO | FRANA | INFERNO |
-| 65 | FIAMON | 2 | 2 | 49 | 78 | 51 | 109 | BRACE | CORNATA | FRANA | INFERNO |
-| 66 | FIAMORAX | 2 | 3 | 62 | 92 | 65 | 134 | BRACE | COLPO | FRANA | ERUZIONE |
-| 67 | IGNI | 3 | 1 | 26 | 57 | 56 | 58 | SCINTILLA | CORNATA | LAVA | INFERNO |
-| 68 | IGNION | 3 | 2 | 39 | 74 | 83 | 81 | SCINTILLA | COLPO | LAVA | INFERNO |
-| 69 | IGNIORAX | 3 | 3 | 53 | 90 | 110 | 104 | SCINTILLA | MORSO | LAVA | ERUZIONE |
-| 70 | CINE | 4 | 1 | 46 | 71 | 56 | 42 | BRACE | COLPO | FULMINE | INFERNO |
-| 71 | CINEON | 4 | 2 | 58 | 84 | 71 | 52 | BRACE | MORSO | FULMINE | INFERNO |
-| 72 | CINEORAX | 4 | 3 | 81 | 107 | 99 | 68 | BRACE | CORNATA | FULMINE | ERUZIONE |
-| 73 | ARDO | 5 | 1 | 40 | 44 | 49 | 56 | SCINTILLA | MORSO | FIAMMATA | INFERNO |
-| 74 | ARDOON | 5 | 2 | 63 | 57 | 76 | 82 | SCINTILLA | CORNATA | FIAMMATA | INFERNO |
-| 75 | ARDOORAX | 5 | 3 | 82 | 68 | 99 | 103 | SCINTILLA | COLPO | FIAMMATA | ERUZIONE |
-| 76 | BRAC | 6 | 1 | 36 | 70 | 56 | 34 | BRACE | CORNATA | ONDATA | INFERNO |
-| 77 | BRACON | 6 | 2 | 53 | 91 | 81 | 46 | BRACE | COLPO | ONDATA | INFERNO |
-| 78 | BRACORAX | 6 | 3 | 74 | 116 | 113 | 61 | BRACE | MORSO | ONDATA | ERUZIONE |
-| 79 | SOLE | 7 | 1 | 52 | 75 | 30 | 58 | SCINTILLA | COLPO | LAVA | INFERNO |
-| 80 | SOLEON | 7 | 2 | 72 | 95 | 43 | 77 | SCINTILLA | MORSO | LAVA | INFERNO |
-| 81 | SOLEORAX | 7 | 3 | 86 | 109 | 52 | 90 | SCINTILLA | CORNATA | LAVA | ERUZIONE |
-| 82 | LAVI | 8 | 1 | 36 | 68 | 36 | 66 | BRACE | MORSO | SPINE | INFERNO |
-| 83 | LAVION | 8 | 2 | 53 | 88 | 54 | 91 | BRACE | CORNATA | SPINE | INFERNO |
-| 84 | LAVIORAX | 8 | 3 | 68 | 106 | 70 | 113 | BRACE | COLPO | SPINE | ERUZIONE |
-| 85 | FUMA | 9 | 1 | 32 | 68 | 32 | 57 | SCINTILLA | CORNATA | FIAMMATA | INFERNO |
-| 86 | FUMAON | 9 | 2 | 51 | 93 | 52 | 84 | SCINTILLA | COLPO | FIAMMATA | INFERNO |
-| 87 | FUMAORAX | 9 | 3 | 66 | 114 | 68 | 105 | SCINTILLA | MORSO | FIAMMATA | ERUZIONE |
-| 88 | VULC | 10 | 1 | 47 | 86 | 42 | 37 | BRACE | COLPO | TAGLIO | INFERNO |
-| 89 | VULCON | 10 | 2 | 61 | 103 | 55 | 46 | BRACE | MORSO | TAGLIO | INFERNO |
-| 90 | VULCORAX | 10 | 3 | 83 | 132 | 75 | 60 | BRACE | CORNATA | TAGLIO | ERUZIONE |
+| 16 | PIRO | 6 | 1 | 52 | 49 | 40 | 46 | BRACE | CORNATA | ONDATA | INFERNO |
+| 17 | PIROON | 6 | 2 | 81 | 64 | 63 | 66 | BRACE | COLPO | ONDATA | INFERNO |
+| 18 | PIROORAX | 6 | 3 | 107 | 78 | 85 | 85 | BRACE | MORSO | ONDATA | ERUZIONE |
+| 19 | FIAM | 7 | 1 | 58 | 60 | 50 | 36 | SCINTILLA | COLPO | LAVA | INFERNO |
+| 20 | FIAMON | 7 | 2 | 86 | 77 | 74 | 50 | SCINTILLA | MORSO | LAVA | INFERNO |
+| 21 | FIAMORAX | 7 | 3 | 107 | 91 | 93 | 60 | SCINTILLA | CORNATA | LAVA | ERUZIONE |
+| 22 | IGNI | 8 | 1 | 44 | 71 | 38 | 42 | BRACE | MORSO | SPINE | INFERNO |
+| 23 | IGNION | 8 | 2 | 63 | 91 | 55 | 56 | BRACE | CORNATA | SPINE | INFERNO |
+| 24 | IGNIORAX | 8 | 3 | 83 | 113 | 75 | 72 | BRACE | COLPO | SPINE | ERUZIONE |
 
 Linee evolutive:
 
+- 
+- 
+- 
+- 
+- 
 - PIRO -> PIROON -> PIROORAX
 - FIAM -> FIAMON -> FIAMORAX
 - IGNI -> IGNION -> IGNIORAX
-- CINE -> CINEON -> CINEORAX
-- ARDO -> ARDOON -> ARDOORAX
-- BRAC -> BRACON -> BRACORAX
-- SOLE -> SOLEON -> SOLEORAX
-- LAVI -> LAVION -> LAVIORAX
-- FUMA -> FUMAON -> FUMAORAX
-- VULC -> VULCON -> VULCORAX
+- 
+- 
 
 ## VENTO
 
 | ID | Nome | Fam. | Stadio | PS | ATT | DIF | VEL | Mossa Lv1 | Mossa Lv8 | Mossa Lv22 | Mossa Lv40 |
 |---:|------|-----:|-------:|---:|----:|----:|----:|---|---|---|---|
-| 91 | AERO | 1 | 1 | 39 | 67 | 35 | 64 | SOFFIO | COLPO | TAGLIO | TORNADO |
-| 92 | AEROON | 1 | 2 | 57 | 90 | 50 | 77 | SOFFIO | MORSO | TAGLIO | TORNADO |
-| 93 | AEROORAX | 1 | 3 | 73 | 111 | 65 | 90 | SOFFIO | CORNATA | TAGLIO | TEMPESTA |
-| 94 | ZEFI | 2 | 1 | 32 | 51 | 35 | 75 | RAFFICA | MORSO | ONDATA | TORNADO |
-| 95 | ZEFION | 2 | 2 | 51 | 72 | 55 | 97 | RAFFICA | CORNATA | ONDATA | TORNADO |
-| 96 | ZEFIORAX | 2 | 3 | 66 | 89 | 71 | 115 | RAFFICA | COLPO | ONDATA | TEMPESTA |
-| 97 | VENT | 3 | 1 | 43 | 60 | 42 | 64 | SOFFIO | CORNATA | FULMINE | TORNADO |
-| 98 | VENTON | 3 | 2 | 58 | 75 | 56 | 75 | SOFFIO | COLPO | FULMINE | TORNADO |
-| 99 | VENTORAX | 3 | 3 | 79 | 97 | 76 | 90 | SOFFIO | MORSO | FULMINE | TEMPESTA |
-| 100 | NUBI | 4 | 1 | 54 | 47 | 46 | 59 | RAFFICA | COLPO | SPINE | TORNADO |
-| 101 | NUBION | 4 | 2 | 72 | 59 | 62 | 69 | RAFFICA | MORSO | SPINE | TORNADO |
-| 102 | NUBIORAX | 4 | 3 | 97 | 76 | 84 | 82 | RAFFICA | CORNATA | SPINE | TEMPESTA |
-| 103 | SIBI | 5 | 1 | 35 | 51 | 36 | 64 | SOFFIO | MORSO | TAGLIO | TORNADO |
-| 104 | SIBION | 5 | 2 | 60 | 78 | 61 | 86 | SOFFIO | CORNATA | TAGLIO | TORNADO |
-| 105 | SIBIORAX | 5 | 3 | 75 | 94 | 76 | 99 | SOFFIO | COLPO | TAGLIO | TEMPESTA |
-| 106 | TURB | 6 | 1 | 28 | 44 | 53 | 69 | RAFFICA | CORNATA | FIAMMATA | TORNADO |
-| 107 | TURBON | 6 | 2 | 45 | 63 | 80 | 89 | RAFFICA | COLPO | FIAMMATA | TORNADO |
-| 108 | TURBORAX | 6 | 3 | 61 | 80 | 106 | 107 | RAFFICA | MORSO | FIAMMATA | TEMPESTA |
-| 109 | BORA | 7 | 1 | 23 | 68 | 38 | 77 | SOFFIO | COLPO | FULMINE | TORNADO |
-| 110 | BORAON | 7 | 2 | 34 | 89 | 54 | 94 | SOFFIO | MORSO | FULMINE | TORNADO |
-| 111 | BORAORAX | 7 | 3 | 46 | 113 | 71 | 113 | SOFFIO | CORNATA | FULMINE | TEMPESTA |
-| 112 | RAFF | 8 | 1 | 40 | 50 | 32 | 81 | RAFFICA | MORSO | GELO | TORNADO |
-| 113 | RAFFON | 8 | 2 | 59 | 67 | 47 | 102 | RAFFICA | CORNATA | GELO | TORNADO |
-| 114 | RAFFORAX | 8 | 3 | 76 | 82 | 60 | 120 | RAFFICA | COLPO | GELO | TEMPESTA |
-| 115 | CIRR | 9 | 1 | 42 | 53 | 31 | 76 | SOFFIO | CORNATA | TAGLIO | TORNADO |
-| 116 | CIRRON | 9 | 2 | 63 | 74 | 48 | 96 | SOFFIO | COLPO | TAGLIO | TORNADO |
-| 117 | CIRRORAX | 9 | 3 | 80 | 89 | 61 | 112 | SOFFIO | MORSO | TAGLIO | TEMPESTA |
-| 118 | ALIS | 10 | 1 | 44 | 43 | 47 | 52 | RAFFICA | COLPO | FRANA | TORNADO |
-| 119 | ALISON | 10 | 2 | 68 | 61 | 72 | 65 | RAFFICA | MORSO | FRANA | TORNADO |
-| 120 | ALISORAX | 10 | 3 | 94 | 81 | 99 | 78 | RAFFICA | CORNATA | FRANA | TEMPESTA |
+| 25 | AERO | 9 | 1 | 51 | 49 | 41 | 54 | SOFFIO | CORNATA | TAGLIO | TORNADO |
+| 26 | AEROON | 9 | 2 | 77 | 70 | 63 | 67 | SOFFIO | COLPO | TAGLIO | TORNADO |
+| 27 | AEROORAX | 9 | 3 | 98 | 85 | 80 | 77 | SOFFIO | MORSO | TAGLIO | TEMPESTA |
+| 28 | ZEFI | 10 | 1 | 31 | 55 | 30 | 75 | RAFFICA | COLPO | FRANA | TORNADO |
+| 29 | ZEFION | 10 | 2 | 49 | 77 | 47 | 96 | RAFFICA | MORSO | FRANA | TORNADO |
+| 30 | ZEFIORAX | 10 | 3 | 69 | 102 | 66 | 120 | RAFFICA | CORNATA | FRANA | TEMPESTA |
 
 Linee evolutive:
 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
 - AERO -> AEROON -> AEROORAX
 - ZEFI -> ZEFION -> ZEFIORAX
-- VENT -> VENTON -> VENTORAX
-- NUBI -> NUBION -> NUBIORAX
-- SIBI -> SIBION -> SIBIORAX
-- TURB -> TURBON -> TURBORAX
-- BORA -> BORAON -> BORAORAX
-- RAFF -> RAFFON -> RAFFORAX
-- CIRR -> CIRRON -> CIRRORAX
-- ALIS -> ALISON -> ALISORAX
 

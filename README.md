@@ -93,6 +93,6 @@ Pull requests and issues are welcome, for example for:
 ## Gioco incluso: MONSTER DUNGEON
 
 Nella cartella `roms/` c'e' **monster_dungeon.gb**, un gioco originale per Game Boy in stile Dragon Quest/Pokemon:
-villaggio, capo palestra, dungeon procedurale infinito, **120 mostri** (Terra, Acqua, Fuoco, Vento) catturabili,
+villaggio, capo palestra, dungeon procedurale infinito, **30 mostri** (Terra, Acqua, Fuoco, Vento) catturabili,
 evoluzioni e crescita fino al livello 100. Vedi [docs/GUIDA.md](docs/GUIDA.md), [docs/MOSTRI.md](docs/MOSTRI.md) e [docs/MOSSE.md](docs/MOSSE.md).
 Codice in `game/` (C + SDCC), generatore dati in `tools/gen_data.py`.

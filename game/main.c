@@ -241,7 +241,7 @@ static u16 mstat(u8 sp, u8 i, u8 lv) {
 
 static u32 need(u8 lv) { return (u32)lv * lv * lv / 2; }
 static u8 stage_of(u8 sp) { return sp % 3; }
-static u8 elem_of(u8 sp) { return sp / 30; }
+static u8 elem_of(u8 sp) { return FAM_EL[sp / 3]; }
 
 static void mk(Mon *m, u8 sp, u8 lv) {
     m->sp = sp;
@@ -310,51 +310,94 @@ static void rect(u8 y, u8 x, u8 h, u8 w, u8 col) {
             if (y + i < 48 && x + j < 24) ho[y + i][x + j] = col;
 }
 
+static void rbox(u8 x0, u8 y0, u8 x1, u8 y1) {
+    u8 x, y;
+    for (y = y0; y <= y1 && y < 48; y++)
+        for (x = x0; x <= x1 && x < 24; x++)
+            if (!((y == y0 || y == y1) && x == x1)) hm[y][x] = 1;
+}
+
 static void gen_sprite(u8 sp, u8 base) {
-    u8 el = sp / 30, fam = (sp % 30) / 3, stg = sp % 3;
-    u8 crx, cry, hcy, hrx, hry, top, pal, hl, bc, shd;
-    u8 y, x, ty, tx, i;
+    u8 el = FAM_EL[sp / 3], fam = sp / 3, stg = sp % 3;
+    u8 bx = 0, by = 33, bh = 0, ey = 14, ex = 3;
+    u8 top = 0, wx = 0, pal, hl, bc, pat, fs, ms;
+    u8 y, x, ty, tx, i, cx0;
     sg = 0x9E37 ^ ((u16)el * 977 + fam * 131 + 7);
     sgr(); sgr();
     for (y = 0; y < 48; y++) for (x = 0; x < 24; x++) hm[y][x] = 0;
-    crx = 9 + stg * 2 + sgr() % 4;
-    cry = 9 + stg * 2 + sgr() % 4;
-    blob(0, 30, crx, cry);
-    if (fam & 1) {
-        hrx = 7 + stg + sgr() % 3; hry = 6 + stg + sgr() % 3; hcy = 14;
-        blob(0, hcy, hrx, hry);
-        blob(0, 21, 5, 5);
+    cx0 = sgr() % 3;
+    /* ---- scheletro: un archetipo di corpo per famiglia ---- */
+    switch (fam) {
+    case 0: /* tondo */
+        blob(0, 30, 11 + stg * 2 + cx0, 10 + stg * 2 + cx0);
+        blob(5, 44, 5, 4); blob(13 + stg, 30, 4, 6);
+        bx = 7; bh = 8; ey = 24; ex = 4; break;
+    case 1: /* bipede */
+        blob(0, 32, 8 + stg, 9 + stg); blob(0, 14, 8 + stg / 2, 7); blob(0, 21, 5, 4);
+        blob(11 + stg, 29, 3, 8); blob(5, 43, 4, 6);
+        bx = 5; bh = 7; ey = 12; ex = 3; break;
+    case 2: /* serpente */
+        blob(0, 10, 6 + stg, 6); blob(0, 20, 5, 6); blob(0, 29, 8 + stg, 6);
+        blob(0, 39, 11 + stg, 7); blob(0, 46, 8, 2); blob(8 + stg, 12, 4, 5);
+        bx = 6; by = 38; bh = 8; ey = 9; ex = 2; break;
+    case 3: /* quadrupede */
+        blob(0, 35, 14 + stg, 9 + stg); blob(0, 21, 8 + stg, 7); blob(6, 13, 3, 6);
+        blob(10, 45, 4, 3); blob(4, 45, 3, 3); blob(16, 36, 3, 5);
+        bx = 8; by = 38; bh = 6; ey = 20; ex = 3; break;
+    case 4: /* uccello */
+        blob(0, 32, 10 + stg, 11); blob(0, 14, 7, 6); blob(0, 20, 5, 4); blob(0, 18, 3, 3);
+        blob(14 + stg, 30, 4, 10 + stg); blob(4, 45, 3, 3); blob(0, 7, 2, 4 + stg * 2);
+        bx = 6; by = 35; bh = 8; ey = 12; ex = 3; break;
+    case 5: /* insetto */
+        blob(0, 13, 9 + stg, 8); blob(0, 22, 4, 3); blob(0, 29, 7, 7); blob(0, 41, 6 + stg, 6);
+        blob(5, 3, 1, 5); blob(9, 26, 4, 2); blob(10, 33, 5, 2); blob(9, 40, 4, 2);
+        ey = 11; ex = 4; break;
+    case 6: /* pesce / lumaca */
+        blob(0, 31, 16, 9 + stg); blob(0, 19, 3, 6 + stg); blob(0, 44, 8, 4);
+        blob(16, 30, 3, 4);
+        bx = 9; by = 34; bh = 6; ey = 26; ex = 5; break;
+    case 7: /* golem */
+        rbox(0, 10, 6 + stg, 21); rbox(0, 22, 11 + stg, 38); rbox(12 + stg, 22, 15 + stg, 36);
+        blob(14 + stg, 40, 4, 4); rbox(2, 39, 8, 46);
+        bx = 5; by = 30; bh = 6; ey = 14; ex = 2; break;
+    case 8: /* sfera fluttuante */
+        blob(0, 23, 12 + stg * 2, 12 + stg);
+        blob(3, 41, 2, 7); blob(8, 40, 2, 7); blob(13, 37, 2, 5);
+        ey = 21; ex = 0; break;
+    default: /* drago */
+        blob(0, 19, 4, 10); blob(0, 11, 7, 6); blob(0, 15, 4, 4);
+        blob(12, 29, 6 + stg, 11 + stg); blob(0, 35, 10, 9); blob(9, 45, 4, 3);
+        blob(5, 6, 2, 6);
+        bx = 6; by = 37; bh = 8; ey = 10; ex = 2; break;
+    }
+    /* limiti del corpo */
+    for (y = 0; y < 48; y++)
+        for (x = 0; x < 24; x++)
+            if (hm[y][x]) {
+                if (!top) top = y + 1;
+                if (x > wx && y > 16 && y < 40) wx = x;
+            }
+    top = top ? top - 1 : 0;
+    /* tratti dell'elemento (ancorati al corpo) */
+    if (el == 0) {
+        blob(4, top + 2, 3, 7 + stg * 2); blob(wx - 2, 22, 5, 4 + stg); blob(wx - 4, 38, 4, 3);
+    } else if (el == 1) {
+        blob(wx, 28, 3, 8 + stg * 2); blob(0, top + 1, 3, 6 + stg * 2); blob(wx - 3, 42, 3, 4);
+    } else if (el == 2) {
+        blob(0, top + 1, 3, 8 + stg * 3); blob(5, top + 3, 2, 6 + stg * 2); blob(wx - 1, 40, 3, 7 + stg * 2);
     } else {
-        hrx = crx - 3; hry = 7; hcy = 30 - cry + 3;
-        blob(0, hcy, hrx, hry);
+        blob(wx + 3, 20, 5 + stg, 10 + stg * 2); blob(wx + 2, 36, 4, 4 + stg);
+        blob(2, top, 2, 6);
     }
-    top = hcy - hry;
-    blob(crx / 2 + 2, 43, 5 + stg / 2, 5);               /* zampe */
-    blob(crx + 1, 29, 4, 7 + (fam & 2 ? 3 : 0));         /* braccia */
-    if (fam >= 4) blob(hrx - 1, top + 1, 3, 6 + stg);    /* orecchie */
-    if (fam & 2) { blob(crx + 3, 40, 4, 4); blob(crx + 5, 35, 3, 4); } /* coda */
-    if (el == 0) {         /* TERRA: corna e placche di roccia */
-        blob(5, top + 2, 3, 6 + stg * 2);
-        blob(crx, 21, 5, 4 + stg);
-        blob(crx - 2, 38, 4, 3);
-    } else if (el == 1) {  /* ACQUA: pinne e cresta */
-        blob(crx + 3, 26, 4, 9 + stg * 2);
-        blob(0, top - 1, 3, 6 + stg * 2);
-        blob(crx / 2, 47, 8, 3);
-    } else if (el == 2) {  /* FUOCO: fiamme */
-        blob(0, top - 3, 4, 8 + stg * 3);
-        blob(6, top, 3, 6 + stg * 2);
-        blob(crx + 1, 41, 3, 7 + stg * 2);
-    } else {               /* VENTO: ali */
-        blob(crx + 4, 22, 6 + stg, 11 + stg * 2);
-        blob(crx + 6, 12, 4, 6 + stg);
-        if (stg) blob(crx + 2, 40, 5, 3);
-    }
+    /* evoluzione: spuntoni e corna in piu' */
+    if (stg > 0) { blob(wx - 1, 24, 3, 4); blob(7, top + 1, 2, 5); }
+    if (stg > 1) { blob(wx + 1, 18, 3, 6); blob(10, top + 4, 2, 7); blob(2, top - 1, 2, 5); }
     /* colori del corpo */
-    pal = fam % 3;
+    pal = (fam + el) % 3;
     hl = pal == 1 ? 1 : 0;
     bc = pal == 0 ? 1 : 2;
-    /* contorno, luce e ombra */
+    pat = (fam * 7 + el * 3) % 5;
+    /* contorno, luce, ombra, pattern */
     for (y = 0; y < 48; y++)
         for (x = 0; x < 24; x++) {
             u8 col;
@@ -363,37 +406,59 @@ static void gen_sprite(u8 sp, u8 base) {
                 ho[y][x] = 3; continue;
             }
             col = bc;
-            if (!mget(y - 3, x - 3) || !mget(y - 2, x - 4)) col = hl;
-            else if (!mget(y + 3, x + 3) || !mget(y + 4, x + 1)) col = pal == 0 ? 2 : ((x + y) & 1 ? 3 : 2);
-            /* texture dell'elemento */
+            if (pat == 1 && y % 8 == 3) col = 2;
+            else if (pat == 2 && ((x * 5 + y * 3 + fam) % 13) == 0) col = 2;
+            else if (pat == 3 && (y & 3) == 0 && ((x + ((y >> 2) & 1) * 2) & 3) == 0) col = hl;
+            else if (pat == 4 && x % 8 == 4 && y > 20) col = 2;
+            if (!mget(y - 3, x - 3) || !mget(y - 2, x - 4) || !mget(y - 4, x - 1)) col = hl;
+            else if (!mget(y + 3, x + 3) || !mget(y + 4, x + 1) || !mget(y + 1, x + 4))
+                col = pal == 0 ? 2 : ((x + y) & 1 ? 3 : 2);
             if (el == 0 && ((x * 3 + y * 5 + fam) % 17) == 0) col = 2;
-            else if (el == 0 && ((x + y * 2 + fam) % 23) == 0) col = 3;
-            else if (el == 1 && (y & 3) == 0 && ((x + ((y >> 2) & 1) * 2) & 3) == 0) col = hl;
-            else if (el == 2 && y < top + 10 + stg * 3 && ((x + y) & 1) == 0) col = 0;
-            else if (el == 3 && ((x + y) & 7) == 0) col = 2;
+            else if (el == 2 && y < top + 14 && ((x + y) & 3) == 0) col = hl;
+            else if (el == 3 && ((x + y) % 9) == 0) col = hl;
             ho[y][x] = col;
         }
     /* pancia chiara ellittica con righe */
-    {
-        u8 brx = crx / 2 + 2, bry = cry / 2 + 3;
+    if (bh) {
         s8 dy;
-        for (dy = -(s8)bry; dy <= (s8)bry; dy++) {
+        for (dy = -(s8)bh; dy <= (s8)bh; dy++) {
             u8 ad = dy < 0 ? -dy : dy;
-            u8 w = (u8)((u16)brx * CIRC[(u8)((u16)ad * 16 / bry)] / 32);
-            s8 yy = 33 + dy;
+            u8 w = (u8)((u16)bx * CIRC[(u8)((u16)ad * 16 / bh)] / 32);
+            s8 yy = by + dy;
             for (x = 0; x < w; x++)
                 if (yy > 0 && yy < 47 && ho[yy][x] != 3 && hm[yy][x])
                     ho[yy][x] = (dy > 0 && !(dy & 3)) ? 1 : 0;
         }
     }
-    /* occhi, bocca */
-    y = hcy - 2;
-    shd = 2 + stg / 2;
-    rect(y, 3, shd + 1, 4, 0);
-    rect(y + 1, 3, shd, 2, 3);
-    ho[y][3] = 3;
-    rect(y + shd + 3, 0, 1, 3 + stg, 3);
-    if (stg > 0) { ho[y + shd + 4][3 + stg] = 3; }
+    /* faccia: occhi (4 stili) e bocca (3 stili) */
+    fs = (fam + el + (fam >> 1)) & 3;
+    ms = (fam + stg) % 3;
+    if (fam == 8) fs = 2;
+    if (fs == 2) {                     /* ciclope */
+        rect(ey - 1, 0, 5, 5, 0);
+        rect(ey, 0, 3, 3, 3);
+        ho[ey + 1][0] = 0;
+        rect(ey - 2, 0, 1, 5, 3);
+    } else if (fs == 0) {              /* occhi tondi */
+        rect(ey - 1, ex, 4, 4, 0);
+        rect(ey, ex, 3, 2, 3);
+        ho[ey][ex] = 0;
+    } else if (fs == 1) {              /* occhi arrabbiati */
+        rect(ey, ex, 3, 4, 0);
+        rect(ey + 1, ex + 1, 2, 2, 3);
+        rect(ey - 1, ex, 1, 5, 3);
+        ho[ey][ex + 3] = 3;
+    } else {                           /* occhi piccoli e vivaci */
+        rect(ey, ex, 3, 4, 0);
+        rect(ey + 1, ex + 1, 2, 2, 3);
+        if (stg) rect(ey - 1, ex, 1, 5, 3);
+    }
+    y = ey + 5 + (fam == 0 || fam == 6 ? 1 : 0);
+    if (fam != 4 && fam != 5 && fam != 8) {
+        if (ms == 0) rect(y, 0, 1, 4 + stg, 3);
+        else if (ms == 1) { rect(y, 0, 2, 5, 3); ho[y + 1][1] = 0; ho[y + 1][3] = 0; ho[y][2] = 0; }
+        else { rect(y, 0, 1, 5, 3); ho[y + 1][4] = 3; ho[y + 1][0] = 3; }
+    }
     /* impacchetta in tile 2bpp, 6x6 */
     for (ty = 0; ty < 6; ty++)
         for (tx = 0; tx < 6; tx++) {
@@ -946,11 +1011,11 @@ static void do_battle(u8 trainer) {
 
 static void wild_encounter(void) {
     u16 lv = 2 + (u16)floorn * 2 + rnd() % 3;
-    u8 el = rnd() & 3, fam = rnd() % 10, stg;
+    u8 fam = rnd() % 10, stg;
     if (lv > 100) lv = 100;
     stg = lv >= 36 ? 2 : lv >= 16 ? 1 : 0;
     if (stg && (rnd() & 3) == 0) stg--;
-    mk(&epar[0], el * 30 + fam * 3 + stg, (u8)lv);
+    mk(&epar[0], fam * 3 + stg, (u8)lv);
     en = 1;
     do_battle(0);
 }
@@ -1163,10 +1228,10 @@ static void title(void) {
     sg = 0;
     box_(0, 0, 20, 18);
     txt(3, 2, "MONSTER DUNGEON");
-    txt(3, 4, "120 MOSTRI");
+    txt(3, 4, "30 MOSTRI");
     txt(3, 5, "4 ELEMENTI");
     txt(3, 6, "FINO AL LV 100");
-    sp = 90 + 10;
+    sp = 26;
     gen_sprite(sp, 128);
     put_sprite(7, 7, 128);
     txt(5, 14, "PREMI START");
@@ -1192,7 +1257,7 @@ static void title(void) {
         }
     }
     {
-        static const char *const ST[4] = {"ROCC   TERRA", "NELO   ACQUA", "PIRO   FUOCO", "AERO   VENTO"};
+        static const char *const ST[4] = {"GROK   TERRA", "NELO   ACQUA", "PIRO   FUOCO", "AERO   VENTO"};
         lcd_off(); cls(); lcd_on();
         msg("VECCHIO: BENVENUTO\nA BORGO ALBA!\nSCEGLI IL TUO\nPRIMO COMPAGNO.");
         box_(2, 3, 16, 6);
@@ -1200,7 +1265,7 @@ static void title(void) {
         c = vmenu(3, 4, 4, ST, 0, 0);
     }
     np = 0; nb = 0;
-    mk(&party[0], c * 30 + 0, 5);
+    mk(&party[0], c == 0 ? 0 : c == 1 ? 9 : c == 2 ? 15 : 24, 5);
     np = 1;
     gold = 100; spheres = 5; badge = 0; maxfloor = 0;
     bs(); bc(SP_NAME[party[0].sp]); bc(" TI SEGUE!\nALLENATI NELLA\nCAVERNA E SCONFIGGI\nIL CAPO BRUNO!");

@@ -14,10 +14,10 @@ Si gioca nell'emulatore del repository (`python main.py roms/monster_dungeon.gb`
 - I mostri guadagnano XP, salgono fino al **livello 100** ed **evolvono** ai livelli 16 e 36.
 
 ## Il mondo dei mostri
-- 120 mostri: 4 elementi x 10 famiglie x 3 stadi di evoluzione. Gli sprite 48x48 sono **generati proceduralmente** dal codice (forme,
+- 30 mostri: 10 famiglie x 3 stadi di evoluzione (4 elementi). Gli sprite 48x48 sono **generati proceduralmente** dal codice (forme,
   contorno, luci, texture e tratti distintivi dell'elemento), quindi non occupano spazio nella ROM.
 - Ciclo degli elementi: **TERRA > ACQUA > FUOCO > VENTO > TERRA** (x2 / x0.5), bonus STAB x1.5.
-- Mosse per mostro ed elemento: [MOSSE.md](MOSSE.md). Elenco completo dei mostri: [MOSTRI.md](MOSTRI.md).
+- Mosse per mostro ed elemento: [MOSSE.md](MOSSE.md). Elenco completo dei 30 mostri: [MOSTRI.md](MOSTRI.md).
 
 ## Compilare
 ```bash

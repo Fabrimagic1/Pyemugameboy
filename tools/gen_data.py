@@ -16,7 +16,10 @@ ELEMENTS = ["TERRA", "ACQUA", "FUOCO", "VENTO"]
 EL3 = ["TER", "ACQ", "FUO", "VEN"]
 FAMILIES = 10
 STAGES = 3
-NSP = 4 * FAMILIES * STAGES  # 120
+NSP = FAMILIES * STAGES  # 30
+# elemento di ogni famiglia: 3 Terra, 2 Acqua, 3 Fuoco, 2 Vento
+FAM_EL = [0, 0, 0, 1, 1, 2, 2, 2, 3, 3]
+FAM_STEM = ["GROK", "MOLD", "ROCC", "NELO", "MARI", "PIRO", "FIAM", "IGNI", "AERO", "ZEFI"]
 
 # --------------------------------------------------------------- MOSSE
 # (nome, potenza, precisione)
@@ -44,12 +47,6 @@ NMV = len(MOVES)
 LEARN_LV = [1, 8, 22, 40]
 
 # ------------------------------------------------------------- SPECIE
-STEMS = {
-    0: ["GROK", "MOLD", "ROCC", "BORL", "DUNA", "KRAG", "SASS", "TUFO", "ARGI", "PIET"],
-    1: ["NELO", "MARI", "ONDI", "PLUV", "SALI", "LIMP", "GORG", "BOLL", "ACQU", "ABIS"],
-    2: ["PIRO", "FIAM", "IGNI", "CINE", "ARDO", "BRAC", "SOLE", "LAVI", "FUMA", "VULC"],
-    3: ["AERO", "ZEFI", "VENT", "NUBI", "SIBI", "TURB", "BORA", "RAFF", "CIRR", "ALIS"],
-}
 SUFFIX = ["", "ON", "ORAX"]
 BIAS = {  # hp, atk, def, spd
     0: (14, 0, 16, -22),
@@ -60,31 +57,30 @@ BIAS = {  # hp, atk, def, spd
 EVO_LV = [16, 36]
 
 rng = random.Random(20240601)
-SPECIES = []  # dict per specie
-for e in range(4):
-    for f in range(FAMILIES):
-        weights = [rng.randint(60, 140) for _ in range(4)]
-        for s in range(STAGES):
-            total = 190 + 75 * s + rng.randint(-10, 18)
-            ws = sum(weights)
-            base = [total * w // ws + BIAS[e][i] for i, w in enumerate(weights)]
-            base = [max(20, min(150, b)) for b in base]
-            sp = e * 30 + f * 3 + s
-            name = STEMS[e][f] + SUFFIX[s]
-            assert len(name) <= 8, name
-            # mosse
-            m0 = e * 6 + (f & 1)
-            m1 = 24 + ((f + s) % 3)
-            if f & 1:
-                e2 = (e + 1 + (f % 3)) & 3
-                m2 = e2 * 6 + 2 + ((f >> 1) & 1)
-            else:
-                m2 = e * 6 + 2 + ((f >> 1) & 1)
-            m3 = e * 6 + (5 if s == 2 else 4)
-            SPECIES.append(dict(id=sp, name=name, el=e, fam=f, stage=s,
-                                base=base, moves=[m0, m1, m2, m3]))
+SPECIES = []
+for f in range(FAMILIES):
+    e = FAM_EL[f]
+    weights = [rng.randint(60, 140) for _ in range(4)]
+    for s in range(STAGES):
+        total = 190 + 75 * s + rng.randint(-10, 18)
+        ws = sum(weights)
+        base = [total * w // ws + BIAS[e][i] for i, w in enumerate(weights)]
+        base = [max(20, min(150, b)) for b in base]
+        sp = f * 3 + s
+        name = FAM_STEM[f] + SUFFIX[s]
+        assert len(name) <= 8, name
+        m0 = e * 6 + (f & 1)
+        m1 = 24 + ((f + s) % 3)
+        if f & 1:
+            e2 = (e + 1 + (f % 3)) & 3
+            m2 = e2 * 6 + 2 + ((f >> 1) & 1)
+        else:
+            m2 = e * 6 + 2 + ((f >> 1) & 1)
+        m3 = e * 6 + (5 if s == 2 else 4)
+        SPECIES.append(dict(id=sp, name=name, el=e, fam=f, stage=s,
+                            base=base, moves=[m0, m1, m2, m3]))
 assert len(SPECIES) == NSP
-assert len({s["name"] for s in SPECIES}) == NSP
+assert len({x["name"] for x in SPECIES}) == NSP
 
 # --------------------------------------------------------------- FONT
 FONT = {
@@ -406,6 +402,7 @@ def write_data_h():
     for s in SPECIES:
         o.append('  "%s",\n' % s["name"])
     o.append("};\n")
+    o.append("static const unsigned char FAM_EL[10] = {%s};\n" % ",".join(str(x) for x in FAM_EL))
     o.append("static const unsigned char SP_BASE[NSP][4] = {\n")
     for s in SPECIES:
         o.append("  {%s},\n" % ",".join(str(b) for b in s["base"]))
@@ -439,7 +436,7 @@ def write_docs():
     d = os.path.join(ROOT, "docs")
     os.makedirs(d, exist_ok=True)
     o = ["# Bestiario di MONSTER DUNGEON\n\n"]
-    o.append("120 mostri: 4 elementi x 10 famiglie x 3 stadi. Ogni famiglia si evolve al "
+    o.append("30 mostri: 10 famiglie x 3 stadi (3 di Terra, 2 di Acqua, 3 di Fuoco, 2 di Vento). Ogni famiglia si evolve al "
              "livello **%d** (stadio 2) e al livello **%d** (stadio 3). I mostri salgono "
              "fino al livello **100**.\n\n" % tuple(EVO_LV))
     o.append("Le statistiche base sono `PS / ATT / DIF / VEL`; a livello L: "
