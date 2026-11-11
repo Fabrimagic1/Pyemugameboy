@@ -55,6 +55,7 @@ async function start() {
   const character = new Character(assets);
   scene.add(character.root);
   window.__char = character;
+  window.view = view;   // per ispezionare la scena dalla console
   window.setCamera = (y, p) => { yaw = y; pitch = p; }; // utile per screenshot/debug dalla console
   const hud = new Hud(world);
   // erba: ?grass=0 la spegne, ?grass=2 la infittisce

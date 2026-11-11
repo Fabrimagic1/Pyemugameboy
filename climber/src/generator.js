@@ -247,7 +247,7 @@ function placeBoulders(ctx, rng, fires) {
       const y = b.y0 + t * (b.y1 - b.y0), r = ctx.radiusAt(theta, y) + s * rng.range(0.0, 0.5);   // sporgono: sulle pareti ripide le cenge sono loro
       const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
       // niente macigni addosso ai falò
-      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 6 && Math.abs(f.y - y) < s + 5)) continue;
+      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 6 && y > f.y - s - 3 && y < f.y + s + 16)) continue;   // anche sopra: il falò resta a cielo aperto
       const flat = rng.chance(B.flat);
       const sp = b.def.special, u = rng.next();
       const kind = u < (sp.ice || 0) ? MAT.ICE : u < (sp.ice || 0) + (sp.vine || 0) ? MAT.VINE : u < (sp.ice || 0) + (sp.vine || 0) + (sp.lava || 0) ? MAT.LAVA : MAT.ROCK;
@@ -262,7 +262,7 @@ function placeBoulders(ctx, rng, fires) {
     for (let k = Math.round(area / 26); k > 0; k--) {
       const theta = rng.range(0, TAU), y = rng.range(b.y0 + 1, b.y1 - 1), s = rng.range(1.7, 2.8);
       const r = ctx.radiusAt(theta, y) + s * rng.range(0.45, 0.8), x = Math.cos(theta) * r, z = Math.sin(theta) * r;
-      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 5 && Math.abs(f.y - y) < s + 4)) continue;
+      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 5 && y > f.y - s - 3 && y < f.y + s + 14)) continue;
       ctx.addBoulder(rng.pick(SLABS), x, y, z, s, rng.range(0, TAU), rng.range(0, 6) * DEG, rng.range(0, TAU), MAT.ROCK, bandOf(y, theta), 'ledge');
     }
   }

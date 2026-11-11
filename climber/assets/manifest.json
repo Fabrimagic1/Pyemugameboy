@@ -33,5 +33,35 @@
       "climb": "Climbing",
       "fall": "Falling"
     }
+  },
+  "biomeTextures": {
+    "shore": {
+      "rock": "tex/shore_rock.jpg",
+      "top": "tex/shore_top.jpg"
+    },
+    "jungle": {
+      "rock": "tex/jungle_rock.jpg",
+      "top": "tex/jungle_top.jpg"
+    },
+    "fungal": {
+      "rock": "tex/fungal_rock.jpg",
+      "top": "tex/fungal_top.jpg"
+    },
+    "alpine": {
+      "rock": "tex/alpine_rock.jpg",
+      "top": "tex/alpine_top.jpg"
+    },
+    "mesa": {
+      "rock": "tex/mesa_rock.jpg",
+      "top": "tex/mesa_top.jpg"
+    },
+    "caldera": {
+      "rock": "tex/caldera_rock.jpg",
+      "top": "tex/caldera_top.jpg"
+    },
+    "summit": {
+      "rock": "tex/summit_rock.jpg",
+      "top": "tex/summit_top.jpg"
+    }
   }
 }

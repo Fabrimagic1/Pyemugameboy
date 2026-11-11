@@ -10,7 +10,8 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export const windTime = { value: 0 };   // condiviso da tutti i materiali che oscillano
+export const windTime = { value: 0 };
+let patchCount = 0;   // condiviso da tutti i materiali che oscillano
 
 // gradino → luminosità. L'indice va da "controluce" (sinistra) a "in piena luce" (destra).
 function ramp(stops, filter) {
@@ -27,6 +28,11 @@ export const RAMP_TERRAIN = ramp([150, 156, 166, 190, 218, 238, 250, 255], THREE
 // sway = ampiezza in metri per metro di altezza sopra swayBase.
 export function toon({ rim = 0.3, sway = 0, swayBase = 0, ramp: r = RAMP_OBJECT, patch = null, ...params } = {}) {
   const m = new THREE.MeshToonMaterial({ gradientMap: r, ...params });
+  // three.js riusa il programma compilato tra materiali "uguali", e per lui due materiali con la
+  // stessa onBeforeCompile (stesso testo) lo sono, anche se le costanti iniettate sono diverse.
+  // Senza una chiave propria, un oggetto può ritrovarsi con lo shader di un altro (es. quello dei macigni).
+  const key = `toon|${rim}|${sway}|${swayBase}|${patch ? ++patchCount : 0}`;
+  m.customProgramCacheKey = () => key;
   m.onBeforeCompile = shader => {
     if (rim > 0) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
       float rimF = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 3.0);

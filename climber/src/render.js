@@ -7,7 +7,7 @@ import { MAT, MAT_INFO, SEA } from './rules.js';
 import { FLAG_STAND } from './surface.js';
 import { hash2 } from './rng.js';
 import { environmentAt } from './generator.js';
-import { addTriplanarDetail, proceduralDetail } from './assets.js';
+import { proceduralDetail, textureArray } from './assets.js';
 import { toon, toToon, smoothGeometry, softenScene, windTime, RAMP_TERRAIN } from './toon.js';
 import { FLORA, floraPart } from './flora.js';
 
@@ -106,30 +106,72 @@ export class WorldView {
   // ── la montagna: NUCLEO (heightmap, quasi sempre nascosto) + MACIGNI instanziati ──
   buildMountain() {
     const w = this.world, T = w.core, nx = T.nx, H = T.H;
-    const bands = w.layout.bands.map(b => ({ rock: col(b.def.rock), top: col(b.def.top) }));
-    const tx = this.assets.textures;
-    const rockTex = tx.rock || proceduralDetail('rock', 256, 3), groundTex = tx.ground || proceduralDetail('ground', 256, 7);
+    const bandsDef = w.layout.bands;
     this.mountain = new THREE.Group();
 
-    // nucleo: colore per pendenza (piano = ciò che si posa, ripido = roccia)
-    const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: RAMP_TERRAIN });
-    addTriplanarDetail(mat, rockTex, groundTex);
-    const seabed = col('#c9b27a'), tmp = new THREE.Color();
+    // Texture a strati: uno strato per fascia di bioma, per la ROCCIA (fianchi) e per la CIMA (facce in piano).
+    // Se il bioma ha le sue texture (assets/manifest.json → biomeTextures) si usano quelle,
+    // altrimenti una texture generica tinta con il colore del bioma.
+    const bt = this.assets.biomeTextures || {}, tx = this.assets.textures;
+    const genRock = (tx.rock && tx.rock.image) || proceduralDetail('rock', 256, 3).image;
+    const genTop = (tx.ground && tx.ground.image) || proceduralDetail('ground', 256, 7).image;
+    const rockArr = textureArray(bandsDef.map(b => (bt[b.id] ? bt[b.id].rock : { image: genRock, tint: b.def.rock })));
+    const topArr = textureArray(bandsDef.map(b => (bt[b.id] ? bt[b.id].top : { image: genTop, tint: b.def.top })));
+
+    // Pezzo di shader comune a nucleo e macigni: roccia triplanare sui fianchi, cima proiettata
+    // dall'alto sulle facce in piano. vBand = strato, vWN/vWP = normale e posizione nel mondo.
+    const surface = (shader, vertexSetup) => {
+      shader.uniforms.uRockArr = { value: rockArr }; shader.uniforms.uTopArr = { value: topArr };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aBand; attribute vec3 aFx; varying float vBand; varying vec3 vFx; varying vec3 vWN; varying vec3 vWP;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvBand = aBand; vFx = aFx;\n${vertexSetup}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying float vBand; varying vec3 vFx; varying vec3 vWN; varying vec3 vWP;
+          uniform highp sampler2DArray uRockArr; uniform highp sampler2DArray uTopArr;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          {
+            float S = 0.085;                                  // una ripetizione ogni ~12 m (a specchio: 24 m)
+            vec3 bw = pow(abs(vWN), vec3(5.0)); bw /= (bw.x + bw.y + bw.z);
+            vec3 rock = texture(uRockArr, vec3(vWP.zy * S, vBand)).rgb * bw.x
+                      + texture(uRockArr, vec3(vWP.xz * S, vBand)).rgb * bw.y
+                      + texture(uRockArr, vec3(vWP.xy * S, vBand)).rgb * bw.z;
+            vec3 top = texture(uTopArr, vec3(vWP.xz * S * 1.4, vBand)).rgb;
+            // vFx.x: 1 = ghiaccio, 2 = liane, 3 = lava (macigni speciali)
+            if (vFx.x > 0.5 && vFx.x < 1.5) { rock = mix(rock, vec3(0.55, 0.8, 0.95), 0.6); top = mix(top, vec3(0.75, 0.9, 1.0), 0.6); }
+            if (vFx.x > 1.5 && vFx.x < 2.5) rock = mix(rock, vec3(0.13, 0.36, 0.1), 0.55 + 0.3 * sin(vWP.x * 3.0 + vWP.z * 2.0) * sin(vWP.y * 0.7));
+            if (vFx.x > 2.5) top = vec3(2.6, 0.55, 0.08);
+            // ciò che "si posa" sulle facce in piano; il bordo segue il disegno della roccia
+            float lum = dot(rock, vec3(0.299, 0.587, 0.114));
+            float topF = max(smoothstep(0.56, 0.72, vWN.y + (lum - 0.3) * 0.25), step(0.98, vFx.z));  // vFx.z: piano del nucleo (solo dove TUTTO il triangolo è piano)
+            diffuseColor.rgb *= mix(rock, top, topF) * vFx.y;   // vFx.y = variazione di luminosità per macigno
+          }`);
+    };
+
+    // nucleo
+    // Le pareti del nucleo sono solo un riempitivo: le arretriamo di 3 m così restano dietro ai macigni
+    // (niente "denti" della griglia in vista). I piani (spiaggia, spalle) restano dove sono.
+    const coreMat = toon({ rim: 0, ramp: RAMP_TERRAIN, patch: sh => surface(sh, `
+      if (aFx.z < 0.5 && objectNormal.y < 0.75) transformed.xz -= normalize(objectNormal.xz + vec2(1e-5)) * 3.0;
+      vWN = normalize(objectNormal); vWP = transformed;`) });
     for (let j0 = 0; j0 < T.nz - 1; j0 += ROWS_PER_CHUNK) {
       const j1 = Math.min(T.nz - 1, j0 + ROWS_PER_CHUNK), nr = j1 - j0 + 1;
-      const pos = new Float32Array(nr * nx * 3), nor = new Float32Array(nr * nx * 3), clr = new Float32Array(nr * nx * 3);
+      const pos = new Float32Array(nr * nx * 3), nor = new Float32Array(nr * nx * 3), band = new Float32Array(nr * nx), fx = new Float32Array(nr * nx * 3);
       for (let jj = 0; jj < nr; jj++) {
         const j = j0 + jj, jm = Math.max(0, j - 1), jp = Math.min(T.nz - 1, j + 1);
         for (let i = 0; i < nx; i++) {
-          const v = (jj * nx + i) * 3, c = j * nx + i, y = H[c], im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
+          const q = jj * nx + i, v = q * 3, c = j * nx + i, y = H[c], im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
           pos[v] = T.xOf(i); pos[v + 1] = y; pos[v + 2] = T.zOf(j);
           const gx = (H[j * nx + ip] - H[j * nx + im]) / ((ip - im) * T.C), gz = (H[jp * nx + i] - H[jm * nx + i]) / ((jp - jm) * T.C);
           const nl = Math.hypot(gx, 1, gz);
           nor[v] = -gx / nl; nor[v + 1] = 1 / nl; nor[v + 2] = -gz / nl;
-          const bd = bands[w.bandAt(y - 0.5).index];
-          if (y < SEA + 0.3) tmp.copy(seabed); else tmp.copy(bd.rock).lerp(bd.top, Math.min(1, Math.max(0, (1 / nl - 0.6) / 0.2)));
-          const k = 0.92 + 0.16 * hash2(i, j, 7);
-          clr[v] = tmp.r * k; clr[v + 1] = tmp.g * k; clr[v + 2] = tmp.b * k;
+          band[q] = w.bandAt(y - 0.5).index;
+          fx[v + 1] = (y < SEA + 0.3 ? 0.8 : 1) * (0.95 + 0.1 * hash2(i, j, 7));
+          // "piano" se lo è almeno da un lato per asse: così la striscia di pianoro accanto a una
+          // parete resta pianoro, invece di ereditarne la pendenza
+          const sx = Math.min(Math.abs(H[j * nx + ip] - y), Math.abs(y - H[j * nx + im])) / T.C;
+          const sz = Math.min(Math.abs(H[jp * nx + i] - y), Math.abs(y - H[jm * nx + i])) / T.C;
+          fx[v + 2] = Math.hypot(sx, sz) < 0.45 ? 1 : 0;
         }
       }
       const idx = [];
@@ -137,40 +179,20 @@ export class WorldView {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(clr, 3));
+      geo.setAttribute('aBand', new THREE.BufferAttribute(band, 1));
+      geo.setAttribute('aFx', new THREE.BufferAttribute(fx, 3));
       geo.setIndex(idx); geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(geo, coreMat);
       mesh.castShadow = true; mesh.receiveShadow = true;
       this.mountain.add(mesh);
     }
 
     // macigni: UNA geometria per modello, disegnata centinaia di volte (instancing).
-    // Per ogni copia: matrice (posizione, rotazione, scala), colore della roccia e colore "di cima".
-    // Lo shader mette il colore di cima sulle facce che guardano in alto: sabbia, muschio, neve…
-    const boulderMat = toon({ rim: 0.18, patch: shader => {
-      shader.uniforms.uRock = { value: rockTex }; shader.uniforms.uRockAvg = { value: rockTex.userData.avgLum || 0.5 };
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec3 iTop; varying vec3 vTop; varying vec3 vWN; varying vec3 vWP;')
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-          vTop = iTop;
-          vWN = normalize(mat3(instanceMatrix) * objectNormal);
-          vWP = (instanceMatrix * vec4(transformed, 1.0)).xyz;`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vTop; varying vec3 vWN; varying vec3 vWP; uniform sampler2D uRock; uniform float uRockAvg;')
-        .replace('#include <color_fragment>', `#include <color_fragment>
-          {
-            vec3 bw = pow(abs(vWN), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-            vec3 tA = texture2D(uRock, vWP.zy * 0.3).rgb, tB = texture2D(uRock, vWP.xz * 0.3).rgb, tC = texture2D(uRock, vWP.xy * 0.3).rgb;
-            float lum = dot(tA * bw.x + tB * bw.y + tC * bw.z, vec3(0.299, 0.587, 0.114)) / uRockAvg;
-            diffuseColor.rgb *= mix(1.0, clamp(lum, 0.4, 1.7), 0.55);
-            // ciò che "si posa" sulle facce in piano, con un bordo un po' irregolare
-            float topF = smoothstep(0.58, 0.74, vWN.y + (lum - 1.0) * 0.12);
-            diffuseColor.rgb = mix(diffuseColor.rgb, vTop, topF);
-          }`);
-    } });
-    const KIND = { [MAT.ICE]: col('#a9d8ee'), [MAT.VINE]: col('#3f7a2c') };
-    const lava = new THREE.Color(2.6, 0.55, 0.08);
-    const m4 = new THREE.Matrix4(), c1 = new THREE.Color(), c2 = new THREE.Color();
+    // Per ogni copia: matrice (posizione, rotazione, scala), strato di texture (bioma) ed effetti.
+    const boulderMat = toon({ rim: 0.16, patch: sh => surface(sh,
+      'vWN = normalize(mat3(instanceMatrix) * objectNormal); vWP = (instanceMatrix * vec4(transformed, 1.0)).xyz;') });
+    const FX = { [MAT.ICE]: 1, [MAT.VINE]: 2, [MAT.LAVA]: 3 };
+    const m4 = new THREE.Matrix4();
     w.shapes.forEach((shape, sid) => {
       const list = w.boulders.filter(b => b.shape === sid);
       if (!list.length) return;
@@ -180,19 +202,16 @@ export class WorldView {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-      const tops = new Float32Array(list.length * 3);
+      const band = new Float32Array(list.length), fx = new Float32Array(list.length * 3);
       const mesh = new THREE.InstancedMesh(geo, boulderMat, list.length);
       list.forEach((b, k) => {
         const m = b.m, s = b.s;
         m4.set(m[0] * s, m[1] * s, m[2] * s, b.x, m[3] * s, m[4] * s, m[5] * s, b.y, m[6] * s, m[7] * s, m[8] * s, b.z, 0, 0, 0, 1);
         mesh.setMatrixAt(k, m4);
-        const bd = bands[b.band], v = 0.86 + 0.28 * hash2(b.id, 3, 5);
-        c1.copy(b.kind === MAT.LAVA ? bd.rock : KIND[b.kind] || bd.rock).multiplyScalar(v);
-        c2.copy(b.kind === MAT.LAVA ? lava : b.kind === MAT.ICE ? KIND[MAT.ICE] : bd.top).multiplyScalar(b.kind === MAT.LAVA ? 1 : 0.94 + 0.12 * hash2(b.id, 9, 5));
-        mesh.setColorAt(k, c1);
-        tops[k * 3] = c2.r; tops[k * 3 + 1] = c2.g; tops[k * 3 + 2] = c2.b;
+        band[k] = b.band; fx[k * 3] = FX[b.kind] || 0; fx[k * 3 + 1] = 0.88 + 0.24 * hash2(b.id, 3, 5);
       });
-      geo.setAttribute('iTop', new THREE.InstancedBufferAttribute(tops, 3));
+      geo.setAttribute('aBand', new THREE.InstancedBufferAttribute(band, 1));
+      geo.setAttribute('aFx', new THREE.InstancedBufferAttribute(fx, 3));
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.mountain.add(mesh);
     });

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 
 export async function loadAssets(base = 'assets/') {
-  const out = { models: {}, textures: {}, character: null };
+  const out = { models: {}, textures: {}, character: null, biomeTextures: {} };
   let manifest;
   try {
     const r = await fetch(base + 'manifest.json', { cache: 'no-cache' });
@@ -36,6 +36,13 @@ export async function loadAssets(base = 'assets/') {
       } catch (e) { console.warn('Personaggio non caricato:', e.message || e); }
     }
   }
+
+  // texture per bioma (roccia + cima): servono come immagini, verranno impacchettate in un array
+  const loadImage = file => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => { console.warn('Immagine non caricata:', file); res(null); }; im.src = base + file; });
+  await Promise.all(Object.entries(manifest.biomeTextures || {}).map(async ([id, d]) => {
+    const [rock, top] = await Promise.all([loadImage(d.rock), loadImage(d.top)]);
+    if (rock && top) out.biomeTextures[id] = { rock, top };
+  }));
 
   const tl = new THREE.TextureLoader();
   await Promise.all(Object.entries(manifest.textures || {}).map(([name, file]) => new Promise(res => {
@@ -139,4 +146,29 @@ float tpLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }`)
   diffuseColor.rgb *= mix(1.0, clamp(d, 0.3, 1.8), uStrength);
 }`);
   };
+}
+
+// Impacchetta N immagini in UNA texture a strati (sampler2DArray): lo shader sceglie lo strato
+// con un indice per macigno, così tutti i biomi si disegnano con un solo materiale.
+// `sources[i]` è un'immagine/canvas, oppure { image, tint } per colorare una texture generica.
+// La ripetizione è "a specchio": anche texture non perfettamente seamless non mostrano giunzioni.
+export function textureArray(sources, size = 512) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const data = new Uint8Array(size * size * 4 * sources.length);
+  sources.forEach((src, i) => {
+    const image = src.image || src;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(image, 0, 0, size, size);
+    if (src.tint) { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = src.tint; ctx.fillRect(0, 0, size, size); }
+    data.set(ctx.getImageData(0, 0, size, size).data, i * size * size * 4);
+  });
+  const tex = new THREE.DataArrayTexture(data, size, size, sources.length);
+  tex.format = THREE.RGBAFormat; tex.type = THREE.UnsignedByteType;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true; tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
 }
