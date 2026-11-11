@@ -22,8 +22,10 @@ Corrispondenza tra file e chiavi del gioco, come scritta in `manifest.json`:
 | `obsidian_spike.glb`, `glowing_lava_rock.glb` | `obsidian`, `emberRock` | |
 | `snow_rock.glb`, `summit_flag.glb` | `summitRock`, `summitFlag` | |
 
-I materiali PBR degli oggetti vengono convertiti in Lambert flat, molto più leggeri con centinaia
-di copie (`toLambert` in `src/render.js`); il personaggio resta PBR. Per tornare a un oggetto
+Tutti i modelli vengono ammorbiditi (normali ricalcolate) e passati a materiali toon
+(`src/toon.js`); con `"flat": true` nel manifest restano sfaccettati, come i cristalli. Palma,
+albero della giungla, cespuglio e pino ora sono procedurali (`src/flora.js`): i loro GLB restano
+nella cartella e si riattivano rimettendoli nel manifest. Per tornare a un oggetto
 procedurale, togli la sua riga dal manifest.
 
 ---

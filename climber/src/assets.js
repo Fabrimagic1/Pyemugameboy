@@ -25,7 +25,7 @@ export async function loadAssets(base = 'assets/') {
       const d = typeof def === 'string' ? { file: def } : def;
       try {
         const gltf = await load(d.file);
-        out.models[name] = { scene: gltf.scene, scale: d.scale ?? 1 };
+        out.models[name] = { scene: gltf.scene, scale: d.scale ?? 1, flat: !!d.flat };
       } catch (e) { console.warn(`Modello "${name}" non caricato (${d.file}):`, e.message || e); }
     }));
     if (manifest.character) {

@@ -8,6 +8,8 @@ import { FLAG_STAND } from './surface.js';
 import { hash2 } from './rng.js';
 import { environmentAt } from './generator.js';
 import { addTriplanarDetail, proceduralDetail } from './assets.js';
+import { toon, toToon, smoothGeometry, softenScene, windTime, RAMP_TERRAIN } from './toon.js';
+import { FLORA, floraPart } from './flora.js';
 
 const TAU = Math.PI * 2;
 const ROWS_PER_CHUNK = 48;
@@ -54,35 +56,28 @@ function primitive(p) {
   }
 }
 
-// I GLB arrivano con materiali PBR: con centinaia di copie costano troppo.
-// Per oggetti a colori piatti un Lambert flat è identico a vedersi e molto più leggero.
-const lambertCache = new Map();
-function toLambert(m) {
-  if (m.map || m.isMeshLambertMaterial) return m;          // con texture: lascialo com'è
-  if (!lambertCache.has(m)) lambertCache.set(m, new THREE.MeshLambertMaterial({
-    color: m.color, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity ?? 1, flatShading: true,
-    transparent: m.transparent, opacity: m.opacity, side: m.side,
-  }));
-  return lambertCache.get(m);
-}
-
-// Le parti di un oggetto (procedurale o GLB) come coppie {geometry, material, matrix}.
-function modelParts(type, assets) {
+// Le parti di un oggetto come {geometry, material, matrix}. In ordine di preferenza:
+//  1. vegetazione procedurale organica (flora.js), con più varianti;
+//  2. GLB da assets/manifest.json: normali ammorbidite (tranne "flat": cristalli) e materiale toon;
+//  3. lista di primitive qui sopra.
+const smoothCache = new Map();
+function modelParts(type, assets, variant = 0) {
   const ext = assets && assets.models[type];
+  if (!ext && FLORA[type]) return [floraPart(type, variant)];
   if (ext) {
     const parts = [];
     ext.scene.updateMatrixWorld(true);
     const S = new THREE.Matrix4().makeScale(ext.scale, ext.scale, ext.scale);
     ext.scene.traverse(o => {
       if (!o.isMesh) return;
-      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();   // alcuni modelli AI non le hanno
-      parts.push({ geometry: o.geometry, material: toLambert(o.material), matrix: S.clone().multiply(o.matrixWorld) });
+      if (!smoothCache.has(o.geometry)) smoothCache.set(o.geometry, ext.flat ? o.geometry : smoothGeometry(o.geometry));
+      parts.push({ geometry: smoothCache.get(o.geometry), material: toToon(o.material, ext.flat ? { rim: 0.5 } : {}), matrix: S.clone().multiply(o.matrixWorld) });
     });
     return parts;
   }
   return (MODELS[type] || []).map(pt => ({
     geometry: primitive(pt),
-    material: new THREE.MeshLambertMaterial({ color: pt.c, flatShading: true, emissive: pt.e ? pt.c : '#000000', emissiveIntensity: pt.e || 0 }),
+    material: toon({ color: pt.c, emissive: pt.e ? pt.c : '#000000', emissiveIntensity: pt.e || 0 }),
     matrix: new THREE.Matrix4().compose(new THREE.Vector3(pt.x || 0, pt.y, pt.z || 0),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(...(pt.r || [0, 0, 0]))), new THREE.Vector3(1, pt.sy || 1, 1)),
   }));
@@ -119,7 +114,8 @@ export class WorldView {
     matCol[MAT.LAVA] = new THREE.Color(3.0, 0.7, 0.08); // >1: "brilla" anche senza luce
     const seabed = col('#c9b27a');
     const N = w.noise, tmp = new THREE.Color();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // toon con rampa morbida: il terreno prende la luce "a pennellate" ma senza bande nette
+    const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: RAMP_TERRAIN });
     // dettaglio triplanare: texture tue (assets/manifest.json) o procedurali
     const tx = this.assets.textures;
     addTriplanarDetail(mat, tx.rock || proceduralDetail('rock', 256, 3), tx.ground || proceduralDetail('ground', 256, 7));
@@ -180,20 +176,24 @@ export class WorldView {
 
   buildProps() {
     const byType = new Map();
-    for (const p of this.world.props) {
-      if (!byType.has(p.type)) byType.set(p.type, []);
-      byType.get(p.type).push(p);
-    }
+    this.world.props.forEach((p, k) => {
+      // le piante procedurali hanno più varianti: ogni esemplare ne prende una
+      const variant = FLORA[p.type] && !this.assets.models[p.type] ? k % FLORA[p.type].variants : 0;
+      const key = p.type + '|' + variant;
+      if (!byType.has(key)) byType.set(key, []);
+      byType.get(key).push(p);
+    });
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-    for (const [type, list] of byType) {
-      for (const part of modelParts(type, this.assets)) {
+    for (const [key, list] of byType) {
+      const [type, variant] = key.split('|');
+      for (const part of modelParts(type, this.assets, Number(variant))) {
         const mesh = new THREE.InstancedMesh(part.geometry, part.material, list.length);
         list.forEach((p, k) => {
           q.setFromAxisAngle(up, p.yaw);
           m4.compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(p.scale, p.scale, p.scale)).multiply(part.matrix);
           mesh.setMatrixAt(k, m4);
         });
-        mesh.castShadow = true;
+        mesh.castShadow = true; mesh.receiveShadow = true;
         this.scene.add(mesh);
       }
     }
@@ -208,7 +208,7 @@ export class WorldView {
       const g = new THREE.Group();
       g.position.set(f.pos.x, f.pos.y, f.pos.z);
       const ext = this.assets.models.campfire;
-      if (ext) { const m = ext.scene.clone(); m.scale.setScalar(ext.scale); g.add(m); }
+      if (ext) { const m = softenScene(ext.scene.clone()); m.scale.setScalar(ext.scale); g.add(m); }
       for (let k = 0; k < 9 && !ext; k++) {
         const st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), stoneMat);
         st.position.set(Math.cos((k / 9) * Math.PI * 2) * 0.85, 0.08, Math.sin((k / 9) * Math.PI * 2) * 0.85);
@@ -221,7 +221,7 @@ export class WorldView {
       }
       const flame = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.1, 8), flameMat);
       flame.position.y = 0.6; g.add(flame);
-      const light = new THREE.PointLight('#ff9b4a', 18, 18, 1.6);
+      const light = new THREE.PointLight('#ff9b4a', 7, 16, 1.6);
       light.position.y = 1.2; g.add(light);
       this.scene.add(g);
       this.fires.push({ flame, light });
@@ -252,7 +252,7 @@ export class WorldView {
     const ext = this.assets.models.summitFlag;
     if (ext) {
       // il modello ha già asta e bandiera: la facciamo oscillare tutta insieme
-      this.flag = ext.scene.clone(); this.flag.scale.setScalar(ext.scale);
+      this.flag = softenScene(ext.scene.clone()); this.flag.scale.setScalar(ext.scale);
       this.flag.traverse(o => { if (o.isMesh) o.castShadow = true; });
       g.add(this.flag);
     } else {
@@ -411,6 +411,7 @@ export class WorldView {
 
   update(dt, camera, orbit = false, mist = null, lights = null) {
     this.time += dt;
+    windTime.value += dt;
     // cielo e nebbia sfumano con la quota della camera
     const env = environmentAt(this.world, camera.position.x, camera.position.z);
     const top = new THREE.Color(0, 0, 0), bottom = new THREE.Color(0, 0, 0), fog = new THREE.Color(0, 0, 0);
@@ -451,7 +452,7 @@ export class WorldView {
     for (const f of this.fires) {
       const k = 1 + 0.15 * Math.sin(this.time * 17 + f.light.id) + 0.1 * Math.sin(this.time * 7.3);
       f.flame.scale.set(1, k, 1);
-      f.light.intensity = 16 * k;
+      f.light.intensity = 6 * k;
     }
     this.flag.rotation.y = Math.sin(this.time * 2) * (this.assets.models.summitFlag ? 0.12 : 0.3);
     if (this.world.food.length) this.updateFood();

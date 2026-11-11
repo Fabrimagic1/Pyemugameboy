@@ -21,6 +21,7 @@
 //   notches  cenge naturali per m² di parete (punti di riposo sparsi)
 //   shape(p,N)        rumore che alza/abbassa il terreno (metri)
 //   material(p,N,c)   materiale della cella (c.flat = calpestabile)
+//   grass             erba: colore, densità (0..1), altezza; onRock = anche sui pianori di roccia
 //   props             oggetti da spargere
 //   temperature       -1 freddo … +1 caldo (afflizioni del giocatore)
 //
@@ -39,6 +40,7 @@ export const BIOME_SLOTS = [
 export const BIOMES = {
   shore: {
     name: 'Spiaggia',
+    grass: { color: '#7fb842', density: 0.75, height: 0.34 },
     beach: 26,
     face: { height: [20, 28], cliff: [3, 7], angle: [64, 74], ledge: [4, 8], slope: [3, 9] },
     bays: [2, 3], coves: 0.03,
@@ -63,6 +65,7 @@ export const BIOMES = {
 
   jungle: {
     name: 'Giungla',
+    grass: { color: '#3f9a34', density: 1.0, height: 0.5 },
     face: { height: [75, 90], cliff: [8, 14], angle: [72, 82], ledge: [3.4, 5.5], slope: [4, 12] },
     bays: [3, 4], coves: 0.03,
     passages: { count: [2, 3], weights: { ramp: 0.6, stairs: 1, gully: 3 } },
@@ -87,6 +90,7 @@ export const BIOMES = {
 
   fungal: {
     name: 'Bosco dei Funghi',
+    grass: { color: '#9a78c8', density: 0.8, height: 0.36, onRock: true },
     face: { height: [75, 90], cliff: [7, 12], angle: [72, 82], ledge: [3.6, 6], slope: [3, 10] },
     bays: [3, 4], coves: 0.035,
     passages: { count: [2, 3], weights: { ramp: 0.8, stairs: 3, gully: 1 } },
@@ -131,6 +135,7 @@ export const BIOMES = {
 
   mesa: {
     name: 'Altopiano Rosso',
+    grass: { color: '#c2a64e', density: 0.3, height: 0.38, onRock: true },
     // tante pareti basse e verticali (strati di arenaria), pianori quasi piatti
     face: { height: [80, 95], cliff: [7, 11], angle: [80, 86], ledge: [3.2, 5], slope: [1, 5] },
     bays: [3, 5], coves: 0.04,

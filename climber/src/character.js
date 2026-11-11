@@ -8,8 +8,9 @@
 //     usa AnimationMixer e sceglie la clip (idle/walk/run/climb/fall).
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
+import { toon, softenScene } from './toon.js';
 
-const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, flatShading: true, ...extra });
+const lam = (color, extra = {}) => toon({ color, rim: 0.35, ...extra });
 
 function limb(radiusTop, radiusBottom, length, mat) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(radiusTop, radiusBottom, length, 7), mat);
@@ -84,6 +85,7 @@ export class Character {
     model.rotation.y = ((def.rotateY ?? 180) * Math.PI) / 180;   // i GLB guardano verso +Z, noi verso -Z
     model.scale.setScalar(def.scale ?? 1);
     // le mesh con skin si deformano: il bounding box statico non basta per il culling
+    softenScene(model, { rim: 0.12 });   // normali morbide + toon, come il resto del mondo
     model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
     // gruppo intermedio per inclinare il corpo verso la parete (le clip non lo fanno)
     this.lean = new THREE.Group();

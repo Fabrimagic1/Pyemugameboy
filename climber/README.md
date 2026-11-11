@@ -247,6 +247,24 @@ Puoi riscriverlo da zero tenendo la stessa interfaccia (posizione in `x, y, z`, 
 tuo personaggio: ad esempio, se aggiungi un rampino che fa salire di 6 m gratis, il validatore può
 saperlo e permettere pareti più lunghe tra un riposo e l'altro.
 
+### Stile grafico: toon, vegetazione organica, erba
+Tre tecniche, tutte spiegate nei commenti dei rispettivi file:
+
+- **Toon shading** (`src/toon.js`): la luce passa per poche fasce invece di sfumare (rampa
+  `gradientMap`), più una luce di contorno (rim light). Perché funzioni servono **normali morbide**:
+  `smoothGeometry` unisce i vertici duplicati dei modelli low-poly e ricalcola le normali, così gli
+  oggetti non sono più sfaccettati senza aggiungere triangoli. I cristalli restano sfaccettati
+  (`"flat": true` nel manifest).
+- **Vegetazione procedurale** (`src/flora.js`): tronchi a tubo curvo con la base allargata, chiome
+  fatte di masse arrotondate con normali "sferizzate" e colore sfumato dal verde scuro (sotto) al
+  chiaro (sopra), palme con foglie arcuate, pini a balze con la neve. Ogni tipo ha 3–4 varianti e
+  oscilla al vento nel vertex shader. Per usare un GLB al posto di una pianta basta rimetterlo nel
+  manifest (`palm`, `jungleTree`, `bush`, `pine`).
+- **Erba** (`src/grass.js`): ciuffi instanziati a piastrelle di 10 m attorno al giocatore, riempite
+  poche per frame. Vento, piegatura al passaggio e dissolvenza in lontananza sono nel vertex
+  shader. Colore, densità e altezza vengono dal bioma (`grass` in `biomes.js`). `?grass=0` la
+  spegne, `?grass=2` la infittisce.
+
 ### Il personaggio
 `src/character.js` costruisce uno scheletro di gruppi annidati (spalla → gomito → mano, anca →
 ginocchio → piede) e lo anima in base allo stato del giocatore:

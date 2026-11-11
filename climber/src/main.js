@@ -10,6 +10,7 @@ import { loadAssets } from './assets.js';
 import { Player } from './player.js';
 import { Hud } from './hud.js';
 import { Fog } from './fog.js';
+import { Grass } from './grass.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -39,9 +40,9 @@ async function start() {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 4000);
-  const hemi = new THREE.HemisphereLight('#dfefff', '#6b5a48', 0.85);
+  const hemi = new THREE.HemisphereLight('#dfefff', '#6b5a48', 1.0);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight('#ffeccd', 2.9);
+  const sun = new THREE.DirectionalLight('#ffeccd', 2.6);
   const sunDir = new THREE.Vector3(0.5, 0.8, 0.3).normalize();
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -56,6 +57,9 @@ async function start() {
   window.__char = character;
   window.setCamera = (y, p) => { yaw = y; pitch = p; }; // utile per screenshot/debug dalla console
   const hud = new Hud(world);
+  // erba: ?grass=0 la spegne, ?grass=2 la infittisce
+  const grassQ = Number(params.get('grass') ?? 1);
+  const grass = grassQ > 0 ? new Grass(world, scene, grassQ) : null;
   const fog = new Fog(world);
   player.fog = fog;
   window.fog = fog;
@@ -161,6 +165,7 @@ async function start() {
     sun.target.position.set(player.x, player.y, player.z);
     view.update(dt, camera, orbit, fog, { hemi, sun });
     view.syncItems(player);
+    if (grass) grass.update(dt, player, 1.0);
     hud.update(player, fog);
     if (composer && fx) composer.render(); else renderer.render(scene, camera);
     requestAnimationFrame(frame);

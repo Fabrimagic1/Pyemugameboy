@@ -1,17 +1,19 @@
 {
   "models": {
     "campfire": "campfire.glb",
-    "palm": "palm.glb",
     "rock": "beach_rock.glb",
-    "jungleTree": { "file": "jungle_tree.glb", "scale": 1.4 },
-    "bush": "bush.glb",
     "giantMushroom": "giant_mushroom.glb",
     "smallMushroom": "small_mushrooms.glb",
-    "pine": { "file": "snow_pine.glb", "scale": 1.15 },
-    "iceShard": "ice_crystals.glb",
+    "iceShard": {
+      "file": "ice_crystals.glb",
+      "flat": true
+    },
     "cactus": "cactus.glb",
     "boulder": "red_boulder.glb",
-    "obsidian": "obsidian_spike.glb",
+    "obsidian": {
+      "file": "obsidian_spike.glb",
+      "flat": true
+    },
     "emberRock": "glowing_lava_rock.glb",
     "summitRock": "snow_rock.glb",
     "summitFlag": "summit_flag.glb"
@@ -24,6 +26,12 @@
     "file": "climber.glb",
     "scale": 1.0,
     "rotateY": 180,
-    "clips": { "idle": "Idle", "walk": "Walking", "run": "Running", "climb": "Climbing", "fall": "Falling" }
+    "clips": {
+      "idle": "Idle",
+      "walk": "Walking",
+      "run": "Running",
+      "climb": "Climbing",
+      "fall": "Falling"
+    }
   }
 }
