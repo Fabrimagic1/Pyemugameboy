@@ -10,7 +10,7 @@
 // Se cambi quanto costa arrampicarsi, cambialo in rules.js: così il generatore
 // continuerà a garantire vie scalabili con il TUO movimento.
 // ─────────────────────────────────────────────────────────────────────────────
-import { CLIMB, MAT, MAT_INFO, STAND_UP, STEP, SEA, steepFactor } from './rules.js';
+import { CLIMB, MAT, MAT_INFO, STAND_UP, STEP, SEA, FOG, ITEMS, PITON_REST, steepFactor } from './rules.js';
 import { environmentAt } from './generator.js';
 
 const GRAVITY = 22;
@@ -22,7 +22,13 @@ export class Player {
     this.world = world;
     this.T = world.terrain;
     this.events = [];
-    this.cold = 0; this.heat = 0; this.hunger = 0; this.injury = 0;
+    this.cold = 0; this.heat = 0; this.hunger = 0; this.injury = 0; this.mist = 0;
+    this.fog = null;                 // impostata da main.js
+    this.inventory = Object.fromEntries(Object.entries(ITEMS).map(([k, v]) => [k, v.start]));
+    this.pitons = [];                // chiodi piantati in parete
+    this.boost = 0;                  // secondi di effetto dell'energetico
+    this.marshmallow = 0;            // attesa prima del prossimo marshmallow
+    this.hint = '';                  // suggerimento contestuale per l'HUD
     this.checkpoint = null;
     this.won = false;
     this.time = 0;
@@ -31,7 +37,7 @@ export class Player {
     this.respawn();
   }
 
-  get maxStamina() { return Math.max(0, 1 - this.cold - this.heat - this.hunger - this.injury); }
+  get maxStamina() { return Math.max(0, 1 - this.cold - this.heat - this.hunger - this.injury - this.mist); }
 
   respawn() {
     const at = this.checkpoint ? this.checkpoint.spawn : this.world.spawn;
@@ -59,6 +65,8 @@ export class Player {
     this.nx = -gx / l; this.ny = 1 / l; this.nz = -gz / l;   // normale (per il disegno)
     this.afflictions(dt);
     this.interactions(dt);
+    this.useItems(input);
+    if (this.mode !== 'climb') this.onPiton = false;
   }
 
   // ── camminata / salto ───────────────────────────────────────────────────────
@@ -169,8 +177,11 @@ export class Player {
     const ny = T.height(nx, nz);
     const dist = Math.hypot(nx - this.x, ny - this.y, nz - this.z);
     const mat = T.material(nx, nz), upN = T.upNormal(nx, nz);
-    if (paid) this.stamina -= dist * CLIMB.drainPerMeter * MAT_INFO[mat].climb * steepFactor(upN);
-    this.stamina -= CLIMB.idleDrain * h;
+    if (paid) this.stamina -= dist * CLIMB.drainPerMeter * MAT_INFO[mat].climb * steepFactor(upN) * (this.boost > 0 ? 0.6 : 1);
+    // appesi a un chiodo ci si riposa invece di consumare
+    this.onPiton = this.pitons.some(q => Math.hypot(q.x - nx, q.y - ny, q.z - nz) < 1.1);
+    if (this.onPiton) this.stamina = Math.min(this.maxStamina, this.stamina + PITON_REST * h);
+    else this.stamina -= CLIMB.idleDrain * h;
     if (mat === MAT.LAVA) { this.injury += 0.35 * h; if (this.hurtCooldown <= 0) { this.say('Lava! Ti bruci'); this.hurtCooldown = 1.5; } }
     if (ny < SEA) return this.release(0);
     this.x = nx; this.z = nz; this.y = ny;
@@ -206,16 +217,50 @@ export class Player {
       if (T > 0.4) this.heat += 0.004 * T * dt; else this.heat = Math.max(0, this.heat - 0.01 * dt);
     }
     this.hunger += 0.0011 * dt;
+    // nebbia: dentro logora, fuori passa piano
+    this.inFog = !!this.fog && this.fog.contains(this.y);
+    if (this.inFog) this.mist += FOG.drain * dt; else this.mist = Math.max(0, this.mist - FOG.recover * dt);
+    this.boost = Math.max(0, this.boost - dt);
+    this.marshmallow = Math.max(0, this.marshmallow - dt);
     this.hurtCooldown -= dt;
     this.stamina = Math.min(this.stamina, this.maxStamina);
     if (this.maxStamina <= 0.02) {
       this.say('Sei svenuto… ti risvegli all\'ultimo falò');
-      this.cold = this.heat = 0; this.injury = 0.1; this.hunger = Math.min(this.hunger, 0.3);
+      this.cold = this.heat = this.mist = 0; this.injury = 0.1; this.hunger = Math.min(this.hunger, 0.3);
+      if (this.fog) this.fog.reset(this);
       this.respawn();
     }
     if (this.y < SEA + 0.2 && this.T.height(this.x, this.z) < SEA) { this.say('In acqua! Si riparte'); this.respawn(); }
     const pk = this.world.peak;
     if (!this.won && Math.hypot(this.x - pk.x, this.z - pk.z) < 6 && this.y > pk.y - 2) { this.won = true; this.say('VETTA RAGGIUNTA!'); }
+  }
+
+  // ── oggetti: F interagisce, 1 benda, 2 energetico ───────────────────────────
+  useItems(inp) {
+    const inv = this.inventory;
+    const bag = this.world.luggage.find(l => !l.opened && Math.hypot(l.x - this.x, l.y - this.y, l.z - this.z) < 2.4);
+    this.hint = bag ? 'F: apri la valigia'
+      : this.warm && this.marshmallow <= 0 ? 'F: arrostisci un marshmallow'
+      : this.mode === 'climb' && inv.piton > 0 && !this.onPiton ? `F: pianta un chiodo (${inv.piton})` : '';
+    if (inp.interact) {
+      if (bag) {
+        bag.opened = true; inv[bag.item]++;
+        this.say(`Valigia: ${ITEMS[bag.item].name}!`);
+      } else if (this.warm && this.marshmallow <= 0) {
+        this.hunger = Math.max(0, this.hunger - 0.15); this.marshmallow = 25;
+        this.say('Marshmallow! −fame');
+      } else if (this.mode === 'climb' && inv.piton > 0) {
+        inv.piton--;
+        this.pitons.push({ x: this.x, y: this.y, z: this.z, nx: this.nx, ny: this.ny, nz: this.nz });
+        this.say('Chiodo piantato: qui ti riposi');
+      }
+    }
+    if (inp.use1 && inv.bandage > 0 && this.injury > 0.02) {
+      inv.bandage--; this.injury = Math.max(0, this.injury - 0.3); this.say('Benda: −ferite');
+    }
+    if (inp.use2 && inv.drink > 0) {
+      inv.drink--; this.boost = 25; this.stamina = this.maxStamina; this.say('Energetico! Stamina piena');
+    }
   }
 
   interactions(dt) {

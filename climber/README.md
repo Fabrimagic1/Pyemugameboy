@@ -22,6 +22,9 @@ Poi apri <http://localhost:8000/climber/> (serve internet per scaricare three.js
 | **M** | mappa della generazione (vista dall'alto, profilo, elenco delle vie) |
 | **P** | mostra in 3D le vie garantite e le riparazioni |
 | **O** | vista orbitale di tutta la montagna |
+| **F** | apri una valigia · pianta un chiodo in parete · marshmallow al falò |
+| **1** / **2** | benda (cura le ferite) / energetico (stamina piena) |
+| **B** | bloom sì/no (`?fx=0` per partire senza) |
 | R / H | torna all'ultimo falò / nascondi aiuto |
 
 Per provare il generatore senza browser: `node climber/tools/test-gen.mjs 20` (verifica su 20 seed
@@ -78,21 +81,24 @@ seed ─► 1 layout ─► 2 rumore ─► 3 timbri ─► 4 cottura ─► 5 m
 tipo di oggetto nella fase 7, la forma della montagna (fasi 1–5) non cambia. Senza i fork, ogni
 modifica sposterebbe tutti i numeri casuali successivi e cambierebbe tutto.
 
-### 1. Layout: avanti e in salita (`buildLayout`, dati in `src/biomes.js`)
+### 1. Layout: una parete per bioma (`buildLayout`, dati in `src/biomes.js`)
 Il mondo è un **corridoio**: `x` laterale, `z` in avanti, `y` in alto. Si parte dalla spiaggia
-(z ≈ 0) e la vetta è in fondo, visibile da lontano. `BIOME_SLOTS` elenca gli slot in ordine; per
-ogni slot il seed sceglie un bioma e costruisce il suo pezzo di **profilo altimetrico**: una
-spezzata fatta di
+(z ≈ 0) e la vetta è in fondo e in alto. `BIOME_SLOTS` elenca gli slot in ordine; per ogni slot
+il seed sceglie un bioma e costruisce il suo pezzo di **profilo altimetrico**:
 
 ```
-pianoro (si cammina, poco inclinato) → parete (si scala, 62–84°) → pianoro → parete → … → pianoro del falò
+[pianoro del falò] → PARETE del bioma: salto, cengia stretta, salto, cengia, … → [pianoro del falò]
 ```
 
-Numero di pareti, altezze, inclinazioni e lunghezza dei pianori vengono dai dati del bioma
-(`steps`). La montagna è ripida: circa 400 m in avanti per 300–350 m di salita (≈ 38° di media),
-con pianori corti (7–20 m) tra pareti di 8–20 m. Il ghiacciaio ha poche pareti alte, l'altopiano rosso tante pareti basse e verticali.
-È questa struttura a far sì che si vada **sempre avanti e in salita**. Il profilo si vede nella
-mappa (tasto M, grafico in alto a destra).
+Ogni bioma è una grande parete alta 50–100 m (`face.height`), fatta di salti di roccia
+(`face.cliff`, 7–16 m a 70–86°) separati solo da cenge strette (`face.ledge`, 3–6 m). Il tratto
+piano largo c'è **solo tra un bioma e l'altro**, dove sta il falò. In totale ≈ 350 m in avanti per
+≈ 340 m di salita: dentro un bioma si sale quasi in verticale. Il profilo si vede nella mappa
+(tasto M).
+
+**Baie e speroni** (`bays`): ogni bioma ha alcune gobbe gaussiane lungo `x` che spostano tutta la
+sua parete avanti o indietro, creando rientranze ad anfiteatro e speroni sporgenti. Il passaggio
+da un bioma all'altro avviene sul pianoro del falò, che è piatto e quindi non si deforma.
 
 ### 2. Rappresentazione: heightmap `y = h(x, z)` + ondulazione
 Il terreno è una heightmap (una cella ogni 0,6 m). Il profilo da solo darebbe pareti dritte come
@@ -119,6 +125,11 @@ Limite di una heightmap: niente strapiombi né grotte. Per quelli servirebbe un 
   - `stairs`, gradoni: alzate di 3–4 m con pedate piatte dove riposarsi;
   - `gully`, canalone: un taglio a 50–58° invece di 75°, con liane nella giungla (costano meno).
 - **Cenge naturali** (`notch`): piccole spianate sparse sulle pareti, densità per m² dal bioma.
+- **Ripari alla base** (`coves`): rientranze scavate nel piede dei salti. Aggiungono complessità
+  alla forma senza aggiungere difficoltà: sono punti di riposo in più.
+
+Sulle cenge il rumore del terreno viene attenuato (`amp` in `profile`), così la complessità sta
+sulle pareti e le cenge restano percorribili: il validatore continua a garantire almeno 2 vie.
 
 ### 4. Cottura (`bakeRows`), la parte costosa
 Tutto quanto sopra viene valutato **una sola volta** per ogni cella (≈ 360 × 1300) e salvato in
@@ -160,11 +171,28 @@ Il punto chiave è che **generatore e giocatore usano le stesse regole** (`src/r
 il movimento, cambia lì i costi e il generatore continuerà a garantire vie scalabili con il tuo
 movimento.
 
-### 7. Oggetti e cibo (`scatterProps`, `placeFood`)
+### 7. Oggetti, cibo e valigie (`scatterProps`, `placeFood`, `placeLuggage`)
 "Dart throwing" (la versione semplice del Poisson-disc sampling): per ogni regola del bioma si
 provano `tries` posizioni casuali e si tengono solo quelle su terreno piano, nel bioma giusto e a
 distanza minima `spacing` dagli altri oggetti (hash spaziale). Il **cibo** viene messo lungo
-**ogni** via validata, così anche la via difficile ha le sue ricompense.
+**ogni** via validata, così anche la via difficile ha le sue ricompense. Le **valigie** (due vicino a
+ogni falò, una lungo ogni via) contengono un oggetto scelto dal seed.
+
+### Nebbia che sale (`src/fog.js`, parametri `FOG` in `src/rules.js`)
+È la pressione del gioco. A ogni tappa (alla partenza, poi a ogni falò acceso) la nebbia aspetta
+`delay` secondi, poi sale di `speed` m/s fino a poco sotto il falò **successivo** e lì si ferma
+finché non lo raggiungi. Dentro la nebbia cresce l'afflizione viola "nebbia", che riduce la barra
+come le altre; fuori passa lentamente. Se svieni, la nebbia torna sotto l'ultimo falò e ricomincia
+l'attesa. Nell'HUD, in basso a destra, vedi tra quanto parte o quanti metri è sotto di te.
+
+### Oggetti (`ITEMS` in `src/rules.js`, logica in `player.js`)
+- **Chiodo** (F in parete): resta piantato dove sei; appeso a un chiodo recuperi stamina invece di
+  consumarla. Si parte con 2.
+- **Benda** (1): toglie il 30 % di ferite. **Energetico** (2): stamina piena e arrampicata meno
+  faticosa per 25 s.
+- **Marshmallow** (F vicino a un falò): toglie fame, uno ogni 25 s.
+
+Le vie sono garantite **senza** oggetti: chiodi ed energetici sono un aiuto in più.
 
 ---
 
@@ -183,7 +211,8 @@ climber/
 │   ├── generator.js    ★ la pipeline in 7 fasi
 │   ├── pathfind.js     ★ validatore (Dijkstra con riposi e celle vietate)
 │   ├── render.js       mesh three.js (terreno a blocchi, oggetti instanziati, cielo)
-│   ├── player.js       movimento segnaposto: da sostituire
+│   ├── fog.js          nebbia che sale a ogni tappa
+│   ├── player.js       movimento segnaposto + afflizioni e oggetti
 │   ├── character.js    personaggio: scheletro procedurale animato (mani in parete) o GLB con animazioni
 │   ├── assets.js       caricamento di assets/manifest.json, texture triplanari del terreno
 │   ├── hud.js          barra stamina/afflizioni, mappa dall'alto, profilo, elenco vie

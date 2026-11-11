@@ -9,6 +9,7 @@ import { Character } from './character.js';
 import { loadAssets } from './assets.js';
 import { Player } from './player.js';
 import { Hud } from './hud.js';
+import { Fog } from './fog.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -32,12 +33,15 @@ async function start() {
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;   // resa "cinematografica": luci morbide, colori pieni
+  renderer.toneMappingExposure = 0.95;
   $('game').appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 4000);
-  scene.add(new THREE.HemisphereLight('#dfefff', '#6b5a48', 1.1));
-  const sun = new THREE.DirectionalLight('#fff3dc', 2.6);
+  const hemi = new THREE.HemisphereLight('#dfefff', '#6b5a48', 0.85);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight('#ffeccd', 2.9);
   const sunDir = new THREE.Vector3(0.5, 0.8, 0.3).normalize();
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -52,11 +56,28 @@ async function start() {
   window.__char = character;
   window.setCamera = (y, p) => { yaw = y; pitch = p; }; // utile per screenshot/debug dalla console
   const hud = new Hud(world);
+  const fog = new Fog(world);
+  player.fog = fog;
+  window.fog = fog;
+
+  // bloom: fa brillare lava, fuochi e oggetti emissivi (tasto B per spegnerlo, o ?fx=0)
+  let composer = null, fx = params.get('fx') !== '0';
+  try {
+    const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+      import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'),
+    ]);
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.5, 0.6, 1.5)); // soglia alta: solo lava e fuochi
+    composer.addPass(new OutputPass());
+  } catch (e) { console.warn('Bloom non disponibile:', e.message || e); }
   window.player = player;
 
   // ── input ──
   const keys = new Set();
   let mouseGrab = false, jumpQueued = false, orbit = params.has('orbit'), orbitT = 0;
+  const pressed = new Set();   // tasti premuti in questo frame (azioni "una volta")
   addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
     keys.add(e.code);
@@ -66,6 +87,8 @@ async function start() {
     if (e.code === 'KeyR') player.respawn();
     if (e.code === 'KeyH') $('help').hidden = !$('help').hidden;
     if (e.code === 'KeyO') orbit = !orbit;
+    if (e.code === 'KeyB') fx = !fx;
+    if (!e.repeat) pressed.add(e.code);
   });
   addEventListener('keyup', e => keys.delete(e.code));
   addEventListener('blur', () => { keys.clear(); mouseGrab = false; });
@@ -86,6 +109,7 @@ async function start() {
   addEventListener('wheel', e => { dist = Math.max(2.5, Math.min(14, dist + Math.sign(e.deltaY) * 0.7)); });
   addEventListener('resize', () => {
     renderer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   });
 
@@ -118,8 +142,11 @@ async function start() {
       jump: jumpQueued,
       sprint: k('ShiftLeft') || k('ShiftRight'),
       grab: mouseGrab || k('KeyE'),
+      interact: pressed.has('KeyF'), use1: pressed.has('Digit1'), use2: pressed.has('Digit2'),
     };
-    jumpQueued = false;
+    jumpQueued = false; pressed.clear();
+    fog.update(dt, player);
+    while (fog.events.length) player.say(fog.events.shift());
     player.update(dt, input, yaw);
 
     character.update(player, dt);
@@ -132,9 +159,10 @@ async function start() {
     } else placeCamera();
     sun.position.set(player.x, player.y, player.z).addScaledVector(sunDir, 120);
     sun.target.position.set(player.x, player.y, player.z);
-    view.update(dt, camera, orbit);
-    hud.update(player);
-    renderer.render(scene, camera);
+    view.update(dt, camera, orbit, fog, { hemi, sun });
+    view.syncItems(player);
+    hud.update(player, fog);
+    if (composer && fx) composer.render(); else renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

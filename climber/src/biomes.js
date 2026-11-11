@@ -1,17 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // BIOMI (dati + piccole funzioni)
 //
-// Il mondo va AVANTI (asse z) e IN SALITA: dalla spiaggia alla vetta lontana.
+// Il mondo va AVANTI (asse z) ma soprattutto IN ALTO: dalla spiaggia alla vetta.
 // È una sequenza di "slot"; ogni giorno, per ogni slot, il seed sceglie UNA
 // delle alternative (es. Giungla oppure Bosco dei Funghi).
-// Ogni bioma è una serie di gradini: PIANORO (si cammina) → PARETE (si scala)
-// → pianoro → parete … e finisce con un pianoro largo dove c'è il falò.
+// Ogni bioma è una GRANDE PARETE: tanti salti di roccia separati solo da cenge
+// strette. Il tratto piano largo c'è solo alla fine del bioma, dove sta il falò.
 //
 // Campi principali:
-//   length   [min,max]   lunghezza in avanti (m)
-//   steps    count: numero di pareti, cliff: altezza delle pareti,
-//            angle: inclinazione delle pareti (°), slope: pendenza dei pianori (°)
-//   passages count: quanti "passaggi" per parete (vie alternative)
+//   face     height: altezza totale della parete del bioma (m)
+//            cliff: altezza di ogni salto, angle: inclinazione (°)
+//            ledge: profondità delle cenge tra un salto e l'altro, slope: loro pendenza (°)
+//   bays     quante baie/speroni piegano la parete (rientranze e sporgenze in pianta)
+//   coves    ripari scavati alla base dei salti, per metro di larghezza
+//   passages count: quanti "passaggi" per salto (vie alternative)
 //            weights: probabilità dei tipi:
 //              ramp   = cengia in diagonale lungo la parete (si sale camminando)
 //              stairs = parete a gradoni con punti di riposo
@@ -19,7 +21,7 @@
 //   notches  cenge naturali per m² di parete (punti di riposo sparsi)
 //   shape(p,N)        rumore che alza/abbassa il terreno (metri)
 //   material(p,N,c)   materiale della cella (c.flat = calpestabile)
-//   props             oggetti da spargere sui pianori
+//   props             oggetti da spargere
 //   temperature       -1 freddo … +1 caldo (afflizioni del giocatore)
 //
 //   p = { x, y, z, t }   (y = quota di base, t = 0..1 dentro al bioma)
@@ -37,13 +39,14 @@ export const BIOME_SLOTS = [
 export const BIOMES = {
   shore: {
     name: 'Spiaggia',
-    length: [70, 85], beach: 28,
-    steps: { count: [3, 4], cliff: [3, 7], angle: [64, 74], slope: [4, 10] },
+    beach: 26,
+    face: { height: [20, 28], cliff: [3, 7], angle: [64, 74], ledge: [4, 8], slope: [3, 9] },
+    bays: [2, 3], coves: 0.03,
     passages: { count: [2, 3], weights: { ramp: 3, stairs: 1, gully: 1 } },
     notches: 0.0060,
     temperature: 0,
-    sky: { top: '#4f9be0', bottom: '#cde8fb', fog: '#c4e2f6', far: 620 },
-    palette: { wall: '#8f8270', wall2: '#6f6455', ledge: '#cdbb88' },
+    sky: { top: '#3f97ea', bottom: '#cfeeff', fog: '#c9e8f8', far: 620 },
+    palette: { wall: '#a8937a', wall2: '#86725c', ledge: '#ecd9a0' },
     gullyMat: MAT.ROCK,
     shape(p, N) {
       return 0.9 * N.fbm(p.x * 0.04, p.y * 0.05, p.z * 0.04, 4) + 0.25 * N.fbm(p.x * 0.2, p.y * 0.2, p.z * 0.2, 2);
@@ -60,13 +63,13 @@ export const BIOMES = {
 
   jungle: {
     name: 'Giungla',
-    length: [85, 105],
-    steps: { count: [5, 7], cliff: [8, 15], angle: [70, 80], slope: [6, 14] },
+    face: { height: [75, 90], cliff: [8, 14], angle: [72, 82], ledge: [3.4, 5.5], slope: [4, 12] },
+    bays: [3, 4], coves: 0.03,
     passages: { count: [2, 3], weights: { ramp: 0.6, stairs: 1, gully: 3 } },
     notches: 0.0060,
     temperature: 0.15,
-    sky: { top: '#3d8fcf', bottom: '#bfe3d0', fog: '#a3d1b5', far: 300 },
-    palette: { wall: '#5d5a48', wall2: '#454536', ledge: '#4f8a35' },
+    sky: { top: '#3a93dc', bottom: '#c8efd6', fog: '#b0dcc0', far: 340 },
+    palette: { wall: '#6b6248', wall2: '#4c4a35', ledge: '#5aa83a' },
     gullyMat: MAT.VINE,
     shape(p, N) {
       return 1.2 * N.fbm(p.x * 0.05, p.y * 0.04, p.z * 0.05, 4) + 0.6 * N.ridged(p.x * 0.09, p.y * 0.03, p.z * 0.09, 2);
@@ -84,13 +87,13 @@ export const BIOMES = {
 
   fungal: {
     name: 'Bosco dei Funghi',
-    length: [85, 105],
-    steps: { count: [5, 7], cliff: [7, 13], angle: [72, 82], slope: [5, 12] },
+    face: { height: [75, 90], cliff: [7, 12], angle: [72, 82], ledge: [3.6, 6], slope: [3, 10] },
+    bays: [3, 4], coves: 0.035,
     passages: { count: [2, 3], weights: { ramp: 0.8, stairs: 3, gully: 1 } },
     notches: 0.0090,
     temperature: 0.1,
     sky: { top: '#5a6fb8', bottom: '#d6c6e8', fog: '#b9a9d6', far: 280 },
-    palette: { wall: '#5b4e5e', wall2: '#463c4a', ledge: '#8a6d9c' },
+    palette: { wall: '#62507a', wall2: '#473a5c', ledge: '#a07fc4' },
     gullyMat: MAT.MOSS,
     shape(p, N) {
       return 1.4 * N.fbm(p.x * 0.04, p.y * 0.04, p.z * 0.04, 5);
@@ -104,14 +107,14 @@ export const BIOMES = {
 
   alpine: {
     name: 'Ghiacciaio',
-    length: [80, 100],
     // poche pareti ma alte, e pochi passaggi: qui il validatore lavora di più
-    steps: { count: [4, 6], cliff: [12, 20], angle: [72, 82], slope: [12, 20] },
+    face: { height: [85, 100], cliff: [10, 16], angle: [72, 82], ledge: [3.4, 5.2], slope: [8, 16] },
+    bays: [2, 4], coves: 0.02,
     passages: { count: [2, 3], weights: { ramp: 1, stairs: 2, gully: 1 } },
     notches: 0.0022,
     temperature: -1,
-    sky: { top: '#6d8fb3', bottom: '#e3edf5', fog: '#dbe6ef', far: 260 },
-    palette: { wall: '#6c727c', wall2: '#50555e', ledge: '#eef3f7' },
+    sky: { top: '#5b8fc9', bottom: '#e6f1fa', fog: '#dde9f3', far: 300 },
+    palette: { wall: '#6f7f98', wall2: '#52607a', ledge: '#f2f7fb' },
     gullyMat: MAT.SNOW,
     shape(p, N) {
       return 2.0 * N.ridged(p.x * 0.03, p.y * 0.03, p.z * 0.03, 3) - 1 + 0.4 * N.fbm(p.x * 0.15, p.y * 0.15, p.z * 0.15, 2);
@@ -128,9 +131,9 @@ export const BIOMES = {
 
   mesa: {
     name: 'Altopiano Rosso',
-    length: [85, 105],
     // tante pareti basse e verticali (strati di arenaria), pianori quasi piatti
-    steps: { count: [7, 9], cliff: [7, 11], angle: [78, 84], slope: [2, 6] },
+    face: { height: [80, 95], cliff: [7, 11], angle: [80, 86], ledge: [3.2, 5], slope: [1, 5] },
+    bays: [3, 5], coves: 0.04,
     passages: { count: [2, 3], weights: { ramp: 1.5, stairs: 1, gully: 1 } },
     notches: 0.0030,
     temperature: 1,
@@ -152,13 +155,13 @@ export const BIOMES = {
 
   caldera: {
     name: 'Caldera',
-    length: [70, 90],
-    steps: { count: [4, 5], cliff: [10, 18], angle: [68, 78], slope: [10, 16] },
+    face: { height: [65, 80], cliff: [9, 14], angle: [70, 80], ledge: [3.4, 5.5], slope: [6, 14] },
+    bays: [2, 4], coves: 0.03,
     passages: { count: [2, 3], weights: { ramp: 0.8, stairs: 1, gully: 2 } },
     notches: 0.0045,
     temperature: 0.7,
-    sky: { top: '#3b2f3a', bottom: '#c96f45', fog: '#7a4a3c', far: 240 },
-    palette: { wall: '#3a3433', wall2: '#262222', ledge: '#5a4a44' },
+    sky: { top: '#3a2a3c', bottom: '#e07a45', fog: '#8a4f3c', far: 260 },
+    palette: { wall: '#3c3236', wall2: '#261f24', ledge: '#5e4a48' },
     gullyMat: MAT.ROCK,
     shape(p, N) {
       // solchi in discesa (dove scorre la lava): bassa frequenza lungo z
@@ -178,13 +181,13 @@ export const BIOMES = {
 
   summit: {
     name: 'Vetta',
-    length: [55, 70],
-    steps: { count: [3, 4], cliff: [10, 16], angle: [70, 80], slope: [20, 28] },
+    face: { height: [50, 60], cliff: [8, 13], angle: [72, 80], ledge: [3.2, 4.8], slope: [10, 18] },
+    bays: [1, 2], coves: 0.03,
     passages: { count: [2, 3], weights: { ramp: 1, stairs: 2, gully: 1 } },
     notches: 0.0045,
     temperature: -0.8,
     sky: { top: '#1f4f8f', bottom: '#bcd3ea', fog: '#c9d8e8', far: 380 },
-    palette: { wall: '#7a7f88', wall2: '#5c6068', ledge: '#eef3f7' },
+    palette: { wall: '#7d8696', wall2: '#5b6474', ledge: '#f4f8fc' },
     gullyMat: MAT.SNOW,
     shape(p, N) {
       return 1.6 * N.ridged(p.x * 0.05, p.y * 0.03, p.z * 0.05, 3) - 0.8;

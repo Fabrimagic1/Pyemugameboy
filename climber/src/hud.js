@@ -17,7 +17,7 @@ export class Hud {
     this.world = world;
     this.bar = {
       stamina: $('bar-stamina'), hunger: $('bar-hunger'), cold: $('bar-cold'),
-      heat: $('bar-heat'), injury: $('bar-injury'),
+      heat: $('bar-heat'), injury: $('bar-injury'), mist: $('bar-mist'),
     };
     $('seed-label').textContent = world.seed;
     this.buildMap();
@@ -25,8 +25,9 @@ export class Hud {
     this.buildStats();
   }
 
-  update(player) {
+  update(player, fog) {
     const b = this.bar;
+    b.mist.style.width = `${player.mist * 100}%`;
     b.stamina.style.width = `${Math.max(0, player.stamina) * 100}%`;
     b.hunger.style.width = `${player.hunger * 100}%`;
     b.cold.style.width = `${player.cold * 100}%`;
@@ -35,7 +36,18 @@ export class Hud {
     b.stamina.classList.toggle('low', player.stamina < 0.2);
     $('alt').textContent = `${Math.max(0, player.y).toFixed(0)} m / ${this.world.height.toFixed(0)} m`;
     $('biome').textContent = player.env ? player.env.main.name : '';
-    $('mode').textContent = player.mode === 'climb' ? 'arrampicata' : (player.warm ? 'al caldo del falò' : '');
+    $('mode').textContent = player.inFog ? 'NELLA NEBBIA!' : player.onPiton ? 'appeso al chiodo (riposo)'
+      : player.mode === 'climb' ? 'arrampicata' : (player.warm ? 'al caldo del falò' : '');
+    // oggetti e suggerimento
+    const inv = player.inventory;
+    $('inv-text').textContent = `Chiodi ${inv.piton} [F]  ·  Bende ${inv.bandage} [1]  ·  Energetico ${inv.drink} [2]` + (player.boost > 0 ? `  ·  carica ${player.boost.toFixed(0)}s` : '');
+    $('hint').textContent = player.hint; $('hint').hidden = !player.hint;
+    // nebbia: quanto è sotto di te, o tra quanto parte
+    if (fog) {
+      const gap = player.y - fog.level, el = $('fogmeter');
+      el.textContent = fog.timer > 0 ? `nebbia tra ${Math.ceil(fog.timer)} s` : gap > 0 ? `nebbia ${gap.toFixed(0)} m sotto${fog.rising ? ' ▲' : ''}` : 'sei nella nebbia';
+      el.classList.toggle('danger', fog.timer <= 0 && gap < 12);
+    }
     while (player.events.length) this.toast(player.events.shift());
     if (player.won) $('win').hidden = false;
     if (!$('map').hidden) this.drawPlayer(player);

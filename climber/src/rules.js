@@ -19,7 +19,7 @@ export const MAT = { ROCK: 0, SAND: 1, ICE: 2, VINE: 3, LAVA: 4, SNOW: 5, MOSS: 
 export const MAT_INFO = [
   { name: 'roccia',   climb: 1.0,      color: null },
   { name: 'sabbia',   climb: 1.25,     color: [0.89, 0.81, 0.60] },
-  { name: 'ghiaccio', climb: 1.9,      color: [0.78, 0.89, 0.96] },
+  { name: 'ghiaccio', climb: 1.6,      color: [0.78, 0.89, 0.96] },
   { name: 'liane',    climb: 0.55,     color: [0.24, 0.47, 0.17] },
   { name: 'lava',     climb: Infinity, color: [1.00, 0.36, 0.08] },
   { name: 'neve',     climb: 1.3,      color: [0.94, 0.96, 0.98] },
@@ -64,3 +64,17 @@ export function steepFactor(up) {
 export function climbCost(dist, matId, up) {
   return dist * (CLIMB.drainPerMeter * MAT_INFO[matId].climb * steepFactor(up) + CLIMB.idleDrain / CLIMB.speedUp);
 }
+
+// ── NEBBIA CHE SALE ──────────────────────────────────────────────────────────
+// A ogni tappa (partenza, poi ogni falò) la nebbia aspetta `delay` secondi e poi
+// sale di `speed` m/s fino a poco sotto il falò SUCCESSIVO, dove si ferma finché
+// non lo raggiungi. Dentro la nebbia l'afflizione "nebbia" cresce di `drain`/s.
+export const FOG = { delay: 75, speed: 0.25, margin: 1.5, drain: 0.03, recover: 0.012 };
+
+// ── OGGETTI ──────────────────────────────────────────────────────────────────
+export const ITEMS = {
+  piton:   { name: 'Chiodo',     weight: 4,   start: 2 },   // F in parete: punto di riposo
+  bandage: { name: 'Benda',      weight: 2.5, start: 1 },   // 1: cura le ferite
+  drink:   { name: 'Energetico', weight: 2.5, start: 0 },   // 2: stamina piena + arrampicata meno faticosa
+};
+export const PITON_REST = 0.16;   // stamina/s recuperata appesi a un chiodo
