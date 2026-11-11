@@ -45,7 +45,7 @@ export class Grass {
     this.radius = quality >= 2 ? 48 : 36;
     this.perSide = Math.round(TILE / (quality >= 2 ? 0.2 : 0.26));   // candidati per lato di piastrella
     this.capacity = this.perSide * this.perSide;
-    this.defs = world.layout.sections.map(s => s.def.grass ? { ...s.def.grass, base: new THREE.Color(s.def.grass.color) } : null);
+    this.defs = world.layout.bands.map(s => s.def.grass ? { ...s.def.grass, base: new THREE.Color(s.def.grass.color) } : null);
     this.uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       time: { value: 0 }, uPlayer: { value: new THREE.Vector3() }, uRadius: { value: this.radius }, uLight: { value: 1 },
     }]);
@@ -110,13 +110,17 @@ export class Grass {
       const def = this.defs[T.B[c]];
       if (!def) continue;
       const m = T.M[c];
-      if (!(m === MAT.MOSS || (def.onRock && m === MAT.ROCK))) continue;
+      // cresce sul muschio; nei biomi aridi anche sulla sabbia in cima ai macigni (non sulla spiaggia)
+      if (!(m === MAT.MOSS || (m === MAT.SAND && T.H[c] > 4.5))) continue;
       // chiazze: un rumore a bassa frequenza dirada l'erba qua e là
       const patch = 0.5 + 0.5 * Math.sin(x * 0.21 + Math.sin(z * 0.17) * 2) * Math.cos(z * 0.19 + Math.sin(x * 0.13) * 2);
       if (hash2(gi, gj, 37) > def.density * (0.45 + 0.9 * patch)) continue;
       const h = def.height * (0.6 + 0.8 * hash2(gi, gj, 41)) * (0.7 + 0.6 * patch);
       this.q.setFromAxisAngle(up, hash2(gi, gj, 53) * 6.283);
-      this.m4.compose(new THREE.Vector3(x, T.height(x, z) - 0.03, z), this.q, new THREE.Vector3(1.15, h, 1.15));
+      // quota esatta: si scende fino alla roccia vera (la mappa delle cime è a celle di 1 m)
+      const gy = this.world.dropTo(x, T.H[c] + 0.8, z, T.H[c] - 0.8);
+      if (gy === null) continue;
+      this.m4.compose(new THREE.Vector3(x, gy - 0.03, z), this.q, new THREE.Vector3(1.15, h, 1.15));
       mesh.setMatrixAt(n, this.m4);
       const v = 0.8 + 0.4 * hash2(gi, gj, 67);
       mesh.setColorAt(n, this.col.copy(def.base).multiplyScalar(v));

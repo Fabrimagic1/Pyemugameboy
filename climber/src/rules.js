@@ -6,9 +6,9 @@
 // di stamina che userà il giocatore. Se cambi il movimento, aggiorna qui.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Il mondo è una heightmap h(x, z): x = laterale, z = avanti (verso la vetta), y = quota.
-// Una cella ogni CELL metri.
-export const CELL = 0.6;
+// Il mondo è un'isola: x, z orizzontali, y in alto. La roccia è l'unione di un
+// NUCLEO (heightmap a gradoni, una cella ogni CELL metri) e di migliaia di MACIGNI 3D.
+export const CELL = 1.0;
 export const SEA = -0.8;          // livello del mare
 
 // Materiali della superficie (uno per cella).
@@ -32,7 +32,8 @@ export const CLIMB = {
   speedSide: 1.7,        // m/s in orizzontale
   drainPerMeter: 0.055,  // stamina per metro su roccia a 50°
   idleDrain: 0.025,      // stamina/s solo per restare attaccati
-  steepK: 0.6,           // quanto costa in più una parete verticale (a 90°: ×1.6)
+  steepK: 0.45,          // quanto costa in più una parete verticale (a 90°: ×1.45)
+  overhangK: 1.0,        // e uno strapiombo (soffitto: +1)
   lungeCost: 0.2,        // scatto verso l'alto
   lungeSpeed: 8.0,
 };
@@ -50,14 +51,15 @@ export const ROUTE_SAFETY = 0.6;
 // distanti tra loro almeno ROUTE_SEPARATION metri (tranne vicino ai falò).
 export const MIN_ROUTES = 2;
 export const MAX_ROUTES = 3;
-export const ROUTE_SEPARATION = 11;
+export const ROUTE_SEPARATION = 9;
 
 const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 // up = componente verticale della normale (1 = piano, 0 = muro verticale)
+// oltre la verticale (up < 0) è uno STRAPIOMBO: costa ancora di più
 export function steepFactor(up) {
   const ang = (Math.acos(Math.min(1, Math.max(0, up))) * 180) / Math.PI;
-  return 1 + CLIMB.steepK * clamp01((ang - 50) / 40);
+  return 1 + CLIMB.steepK * clamp01((ang - 50) / 40) + CLIMB.overhangK * Math.max(0, -up);
 }
 
 // Costo in stamina di un movimento in arrampicata di `dist` metri (3D).

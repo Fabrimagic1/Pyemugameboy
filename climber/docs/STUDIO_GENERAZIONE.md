@@ -132,3 +132,10 @@ solo se dopo A e B gli strapiombi mancano davvero: è una riscrittura della fisi
    passo C e non investire troppo in A.
 3. **Macigni:** se si arriva a C, li generi tu come hai fatto per gli altri asset, o li genero io
    dal codice (poliedri irregolari smussati)?
+
+## 7. Esito
+
+Si è scelto il passo C insieme al B: isola scalabile da ogni lato, macigni 3D veri generati dal
+codice (poliedri convessi, 8 modelli riusati ≈ 3300 volte), fisica su campo di distanza con
+strapiombi, cenge e vie che emergono dalle facce dei macigni. La descrizione del sistema attuale è
+nel README principale, sezione 2.

@@ -1,89 +1,92 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// VALIDATORE DI PERCORSO
-// Domanda: "un giocatore con la barra di stamina piena può andare dal falò A
-// al falò B?" Ogni cella della heightmap è un punto del terreno. Camminare su
-// celle calpestabili non costa nulla e AZZERA la stamina usata (ti riposi);
-// arrampicarsi costa stamina secondo le regole di rules.js.
-//
-// È un Dijkstra in cui la chiave = stamina consumata dall'ultimo riposo.
-// Le chiavi sono intere (stamina × Q) e usiamo una coda a "secchielli"
-// (algoritmo di Dial): molto più veloce di un heap per costi piccoli.
-// `blocked` permette di vietare celle: serve per cercare vie ALTERNATIVE.
+// VIE SUL MUCCHIO DI MACIGNI
+// Con i macigni le cenge non sono disegnate: sono le facce piane che capitano.
+// Quindi il validatore lavora su un GRAFO DI APPOGGI:
+//   nodo  = un punto dove si può stare in piedi e riposare (stamina piena)
+//   arco  = si può andare da un appoggio all'altro
+//            · camminando (vicini e quasi alla stessa quota) o saltando giù: gratis
+//            · arrampicando: solo se la distanza sta nel budget di stamina,
+//              calcolato con le stesse regole del giocatore (rules.js)
+// Una via è un cammino nel grafo: ogni tratto in parete parte e arriva su un riposo.
 // ─────────────────────────────────────────────────────────────────────────────
-import { FLAG_STAND } from './surface.js';
-import { MAT, SEA, STEP, climbCost } from './rules.js';
+import { CLIMB, MAT_INFO, ROUTE_SAFETY } from './rules.js';
 
-const Q = 400; // risoluzione: 1 unità = 1/400 di stamina
-const DROP = 3.5; // si può saltare giù da 3.5 m senza ferirsi
+const HASH = 4;        // lato delle celle dell'indice (m)
+const DETOUR = 1.25;   // in parete non si va in linea retta: margine sul percorso
+const DROP = 3.5;      // si può saltare giù da 3.5 m senza ferirsi
+const MAX_R = 4;       // raggio massimo considerato per una cengia
 
-export function solveSegment(T, { startCells, isGoal, target, j0, j1, budget, blocked }) {
-  const nx = T.nx, rowsN = j1 - j0 + 1, N = nx * rowsN;
-  const H = T.H, M = T.M, F = T.F, UP = T.UP, C = T.C;
-  const maxKey = Math.ceil(budget * Q);
-  const key = new Int32Array(N).fill(0x7fffffff);
-  const parent = new Int32Array(N).fill(-1);
-  const closed = new Uint8Array(N);
-  const buckets = Array.from({ length: maxKey + 1 }, () => []);
-  const heads = new Int32Array(maxKey + 1); // code FIFO: a parità di costo vince il percorso più corto
-  const highLimit = Math.floor(maxKey * 0.85);
-  const DI = [1, -1, 0, 0, 1, 1, -1, -1], DJ = [0, 0, 1, -1, 1, -1, 1, -1];
-  const DD = [C, C, C, C, C * Math.SQRT2, C * Math.SQRT2, C * Math.SQRT2, C * Math.SQRT2];
+// quanti metri si possono scalare tra due riposi su un dato materiale
+export function climbReach(kind) {
+  const perMeter = CLIMB.drainPerMeter * MAT_INFO[kind].climb * 1.25 + CLIMB.idleDrain / CLIMB.speedUp;
+  return ROUTE_SAFETY / (DETOUR * perMeter);
+}
 
-  // Chiave di arrivo nella cella gn partendo da g (con chiave k). -1 = impossibile.
-  function arrive(g, gn, k, dxz) {
-    if (blocked && blocked[gn]) return -1;
-    const hn = H[gn];
-    if (hn < SEA + 0.15 || M[gn] === MAT.LAVA) return -1;
-    const dh = hn - H[g];
-    if ((F[gn] & FLAG_STAND) && dh <= STEP && dh >= -DROP) return 0;   // si cammina: riposo
-    const nk = k + Math.max(1, Math.round(climbCost(Math.hypot(dxz, dh), M[gn], UP[gn]) * Q));
-    return nk > maxKey ? -1 : nk;            // stamina finita: non si passa
+export class RestGraph {
+  constructor(nodes, sdf) {
+    this.nodes = nodes; this.sdf = sdf;
+    this.map = new Map(); this.cache = new Map();
+    this.reach = MAT_INFO.map((m, k) => (Number.isFinite(m.climb) ? climbReach(k) : 0));
+    this.maxReach = Math.max(...this.reach);
+    this.refresh(0);
   }
-
-  for (const [i, j] of startCells) {
-    if (j < j0 || j > j1) continue;
-    const c = (j - j0) * nx + i;
-    key[c] = 0; buckets[0].push(c);
-  }
-
-  // Dijkstra con "insieme chiuso": ogni cella viene fissata la prima volta che esce
-  // dalla coda. Arrivare su terreno piano riporta la chiave a 0, quindi l'ordine non
-  // è perfettamente monotono: il risultato è leggermente prudente (può sottostimare
-  // cosa è raggiungibile, mai sovrastimarlo) — un percorso trovato è sempre valido.
-  let cur = 0, goal = -1, visited = 0;
-  const cand = [];   // [distanza dall'obiettivo, cella] per il riparatore
-  for (;;) {
-    while (cur <= maxKey && heads[cur] === buckets[cur].length) cur++;
-    if (cur > maxKey) break;
-    const c = buckets[cur][heads[cur]++];
-    if (closed[c] || key[c] !== cur) continue;
-    closed[c] = 1;
-    visited++;
-    const i = c % nx, j = j0 + ((c / nx) | 0);
-    const g = j * nx + i;
-    if (isGoal(i, j)) { goal = c; break; }
-    if (!(F[g] & FLAG_STAND) && cur <= highLimit)
-      cand.push([Math.hypot(T.xOf(i) - target.x, T.zOf(j) - target.z, H[g] - target.y), c]);
-    for (let k = 0; k < 8; k++) {
-      const ni = i + DI[k], nj = j + DJ[k];
-      if (ni < 0 || ni >= nx || nj < j0 || nj > j1) continue;
-      const cn = (nj - j0) * nx + ni;
-      if (closed[cn]) continue;
-      const nk = arrive(g, nj * nx + ni, cur, DD[k]);
-      if (nk < 0 || nk >= key[cn]) continue;
-      key[cn] = nk; parent[cn] = c; buckets[nk].push(cn);
-      if (nk < cur) cur = nk;
+  key(x, y, z) { return ((Math.floor(x / HASH) + 512) * 1024 + Math.floor(y / HASH) + 64) * 1024 + Math.floor(z / HASH) + 512; }
+  // indicizza i nodi da `from` in poi (dopo una riparazione) e dimentica gli archi dei vicini
+  refresh(from) {
+    for (let i = from; i < this.nodes.length; i++) {
+      const p = this.nodes[i], k = this.key(p.x, p.y, p.z);
+      if (!this.map.has(k)) this.map.set(k, []);
+      this.map.get(k).push(i);
+      if (from > 0) for (const j of this.near(p.x, p.y, p.z, this.maxReach + 2 * MAX_R)) this.cache.delete(j);
     }
   }
-
-  const toIJ = c => [c % nx, j0 + ((c / nx) | 0)];
-  const path = [];
-  for (let c = goal; c >= 0; c = parent[c]) path.push(toIJ(c));
-  path.reverse();
-  let candidates = [];
-  if (goal < 0) {
-    cand.sort((a, b) => a[0] - b[0]);
-    candidates = cand.slice(0, 4000).map(([, c]) => toIJ(c));
+  near(x, y, z, r) {
+    const out = [], n = Math.ceil(r / HASH), cx = Math.floor(x / HASH), cy = Math.floor(y / HASH), cz = Math.floor(z / HASH);
+    for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) for (let c = -n; c <= n; c++) {
+      const list = this.map.get(((cx + a + 512) * 1024 + cy + b + 64) * 1024 + cz + c + 512);
+      if (!list) continue;
+      for (const i of list) { const p = this.nodes[i]; if ((p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 <= r * r) out.push(i); }
+    }
+    return out;
   }
-  return { ok: goal >= 0, path, candidates, visited };
+  // archi uscenti dal nodo i: [destinazione, 'walk' | 'climb']
+  edges(i) {
+    if (this.cache.has(i)) return this.cache.get(i);
+    const a = this.nodes[i], out = [];
+    for (const j of this.near(a.x, a.y, a.z, this.maxReach + 2 * MAX_R)) {
+      if (j === i) continue;
+      const b = this.nodes[j], dy = b.y - a.y, hd = Math.hypot(b.x - a.x, b.z - a.z);
+      // ogni appoggio è una superficie larga r: si cammina fino al suo bordo, poi si scala
+      const gap = Math.max(0, hd - a.r - b.r);
+      if ((gap <= 1.2 && Math.abs(dy) <= 0.8) || (dy < 0 && dy >= -DROP && gap <= 1.5)) { out.push([j, 'walk']); continue; }
+      if (Math.hypot(gap, dy) > this.reach[b.kind] || dy < -6) continue;
+      // il tratto deve restare vicino alla roccia: non si scala nel vuoto
+      let ok = true;
+      for (const t of [0.25, 0.5, 0.75]) if (this.sdf(a.x + (b.x - a.x) * t, a.y + dy * t + 0.6, a.z + (b.z - a.z) * t) > 2.2) { ok = false; break; }
+      if (ok) out.push([j, 'climb']);
+    }
+    this.cache.set(i, out);
+    return out;
+  }
+}
+
+// Cammino con meno tratti da `start` a `goal` (BFS). Se non esiste, `closest` è il nodo
+// raggiunto più vicino al traguardo: lì il generatore aggiunge un appoggio.
+export function findRoute(graph, start, goal, blocked) {
+  const prev = new Map([[start, [-1, '']]]), queue = [start], g = graph.nodes[goal];
+  let closest = start, best = Infinity;
+  for (let h = 0; h < queue.length; h++) {
+    const i = queue[h];
+    if (i === goal) break;
+    const p = graph.nodes[i], d = Math.hypot(p.x - g.x, (p.y - g.y) * 1.3, p.z - g.z);
+    if (d < best) { best = d; closest = i; }
+    for (const [j, type] of graph.edges(i)) {
+      if (prev.has(j) || (blocked && blocked.has(j) && j !== goal)) continue;
+      prev.set(j, [i, type]); queue.push(j);
+    }
+  }
+  if (!prev.has(goal)) return { path: null, closest, visited: prev.size };
+  const path = [], types = [];
+  for (let i = goal; i !== -1; i = prev.get(i)[0]) { path.push(i); if (prev.get(i)[0] !== -1) types.push(prev.get(i)[1]); }
+  return { path: path.reverse(), types: types.reverse(), closest, visited: prev.size };
 }

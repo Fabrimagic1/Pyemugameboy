@@ -11,13 +11,13 @@ import { CELL, STAND_UP, SEA } from './rules.js';
 export const FLAG_STAND = 1;
 
 export class Terrain {
-  constructor(x0, z0, nx, nz) {
-    this.C = CELL;
+  constructor(x0, z0, nx, nz, cell = CELL) {
+    this.C = cell;
     this.x0 = x0; this.z0 = z0;
     this.nx = nx; this.nz = nz;
     const n = nx * nz;
     this.H = new Float32Array(n);     // quota
-    this.SH = new Float32Array(n);    // spostamento delle pareti (per i timbri, vedi generator)
+    this.G = new Float32Array(n);     // pendenza |∇h| (serve alla distanza dal nucleo)
     this.M = new Uint8Array(n);       // materiale
     this.B = new Uint8Array(n);       // bioma (con dithering ai confini)
     this.F = new Uint8Array(n);       // flag (calpestabile)
@@ -75,7 +75,7 @@ export class Terrain {
         const gz = (H[jp * nx + i] - H[jm * nx + i]) / C2;
         const c = j * nx + i;
         const up = 1 / Math.sqrt(1 + gx * gx + gz * gz);
-        this.UP[c] = up;
+        this.UP[c] = up; this.G[c] = Math.hypot(gx, gz);
         this.F[c] = up >= STAND_UP && H[c] > SEA + 0.15 ? FLAG_STAND : 0;
       }
     }

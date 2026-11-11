@@ -112,12 +112,10 @@ export class Character {
 
     // posizione del corpo
     if (climbing) {
-      // staccato dalla parete lungo la normale, le mani all'altezza del punto di presa
-      const g = Math.hypot(p.nx, p.nz) / Math.max(0.05, p.ny);   // pendenza (tan)
-      const off = 0.3 + 1.25 / Math.max(g, 1);
-      const hl = Math.hypot(p.nx, p.nz) || 1;
-      this.root.position.set(p.x + (p.nx / hl) * off, p.y - 1.2, p.z + (p.nz / hl) * off);
-      this.wallLean = Math.atan(g);
+      // in arrampicata p è il punto del corpo a contatto: i piedi stanno sotto, staccati dalla roccia
+      const hl = Math.hypot(p.nx, p.nz);
+      this.root.position.set(p.x + p.nx * 0.12, p.y - 0.15, p.z + p.nz * 0.12);
+      this.wallLean = Math.atan2(hl, Math.max(0.05, p.ny)) ;   // 90° = parete verticale
     } else {
       this.root.position.set(p.x, p.y, p.z);
     }

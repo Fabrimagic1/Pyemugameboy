@@ -104,7 +104,7 @@ async function start() {
   addEventListener('mouseup', e => { if (e.button === 0) mouseGrab = false; });
 
   // camera in terza persona
-  let yaw = Math.PI, pitch = 0.2, dist = 6;   // si guarda in avanti, verso la vetta
+  let yaw = Math.atan2(world.spawn.x, world.spawn.z), pitch = 0.2, dist = 6;   // si guarda verso il monte
   addEventListener('mousemove', e => {
     if (document.pointerLockElement !== canvas) return;
     yaw -= e.movementX * 0.0025;
@@ -117,18 +117,26 @@ async function start() {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   });
 
-  const T = world.terrain;
   const target = new THREE.Vector3(), look = new THREE.Vector3(), cam = new THREE.Vector3();
+  const camN = [0, 0, 0];
   function placeCamera() {
-    target.set(player.x, player.y + (player.mode === 'climb' ? 0.4 : 1.5), player.z);
+    target.set(player.x, player.y + (player.mode === 'climb' ? 1.0 : 1.5), player.z);
     look.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-    // accorcia la distanza se la camera finirebbe dentro la roccia
-    let d = 0.3;
+    // la camera si avvicina se c'è roccia in mezzo, ma mai fin dentro al personaggio:
+    // sotto 2 m di distanza la si fa invece "scivolare" fuori dalla roccia lungo la normale
+    let d = 0.4;
     for (; d < dist; d += 0.2) {
       cam.copy(target).addScaledVector(look, -d);
-      if (T.height(cam.x, cam.z) + 0.4 > cam.y) { d -= 0.2; break; }
+      if (world.sdf(cam.x, cam.y, cam.z) < 0.35) { d -= 0.2; break; }
     }
-    camera.position.copy(target).addScaledVector(look, -Math.max(0.3, d));
+    cam.copy(target).addScaledVector(look, -Math.max(2, Math.min(d, dist)));
+    for (let k = 0; k < 5; k++) {
+      const s = world.sdf(cam.x, cam.y, cam.z);
+      if (s >= 0.45) break;
+      const n = world.normal(cam.x, cam.y, cam.z, camN);
+      cam.x += n[0] * (0.45 - s); cam.y += n[1] * (0.45 - s); cam.z += n[2] * (0.45 - s);
+    }
+    camera.position.copy(cam);
     camera.lookAt(target);
   }
 
@@ -157,9 +165,9 @@ async function start() {
     if (orbit) {
       // vista orbitale: tutta la montagna da fuori, per studiare la generazione
       orbitT += dt * 0.1;
-      const L = world.length, D = L * 0.75, cz = L * 0.5;
-      camera.position.set(Math.sin(orbitT) * D, world.height * 1.1, cz - Math.cos(orbitT) * D);
-      camera.lookAt(0, world.height * 0.35, cz);
+      const D = world.layout.islandRadius * 1.9;
+      camera.position.set(Math.sin(orbitT) * D, world.height * 0.75, -Math.cos(orbitT) * D);
+      camera.lookAt(0, world.height * 0.42, 0);
     } else placeCamera();
     sun.position.set(player.x, player.y, player.z).addScaledVector(sunDir, 120);
     sun.target.position.set(player.x, player.y, player.z);

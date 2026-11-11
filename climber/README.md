@@ -1,8 +1,8 @@
 # Cima Procedurale
 
 Un prototipo di gioco di arrampicata in 3D per browser, con una montagna **generata proceduralmente
-a biomi in sequenza**: si va avanti e in salita dalla spiaggia alla vetta, con **più vie diverse**
-tra un falò e l'altro. Cambia ogni giorno (stesso seed → stessa montagna per tutti).
+a biomi impilati**: un'isola da scalare da ogni lato, dalla spiaggia alla vetta, fatta di **macigni accatastati**,
+con più vie tra un falò e l'altro. Cambia ogni giorno (stesso seed → stessa montagna per tutti).
 Lo scopo è didattico: il codice della generazione è commentato riga per riga, e il movimento del
 giocatore è un segnaposto pensato per essere sostituito con le tue meccaniche.
 
@@ -69,130 +69,89 @@ procedurale, più facile da studiare. Nomi, grafica e livelli sono originali.
 
 ## 2. La pipeline di generazione
 
-Tutto è in `src/generator.js` e non dipende da three.js. Le fasi:
+La montagna è un **mucchio di macigni**: pochi modelli di roccia, riusati migliaia di volte con
+posizione, rotazione e scala diverse. Lo studio che ha portato a questa scelta è in
+[`docs/STUDIO_GENERAZIONE.md`](docs/STUDIO_GENERAZIONE.md). Tutto è in `src/generator.js` e non
+dipende da three.js.
 
 ```
-seed ─► 1 layout ─► 2 rumore ─► 3 timbri ─► 4 cottura ─► 5 materiali ─► 6 più vie ─► 7 oggetti
+seed ─► 1 layout ─► 2 nucleo ─► 3 macigni ─► 4 campo di distanza ─► 5 cenge ─► 6 vie ─► 7 oggetti
 ```
 
 ### 0. Seed e RNG (`src/rng.js`)
 `hashString("2026-11-05")` → intero a 32 bit → generatore `mulberry32`. Ogni fase usa
-`rng.fork("nome-fase")`: un flusso di numeri indipendente. **Perché è importante:** se aggiungi un
-tipo di oggetto nella fase 7, la forma della montagna (fasi 1–5) non cambia. Senza i fork, ogni
-modifica sposterebbe tutti i numeri casuali successivi e cambierebbe tutto.
+`rng.fork("nome-fase")`: un flusso di numeri indipendente, così cambiare una fase non sposta i
+numeri casuali delle altre.
 
-### 1. Layout: una parete per bioma (`buildLayout`, dati in `src/biomes.js`)
-Il mondo è un **corridoio**: `x` laterale, `z` in avanti, `y` in alto. Si parte dalla spiaggia
-(z ≈ 0) e la vetta è in fondo e in alto. `BIOME_SLOTS` elenca gli slot in ordine; per ogni slot
-il seed sceglie un bioma e costruisce il suo pezzo di **profilo altimetrico**:
+### 1. Layout: fasce di bioma e spalle (`buildLayout`, dati in `src/biomes.js`)
+La montagna è un'isola, scalabile da ogni lato. `BIOME_SLOTS` elenca gli slot dal basso; per ogni
+slot il seed sceglie un bioma, la sua altezza (25–65 m) e l'inclinazione della parete (62–80°).
+Tra un bioma e l'altro c'è una **spalla** piana di una decina di metri, dove sta il falò: breve
+tratto piano, poi di nuovo scalata. In tutto ≈ 240 m di quota su ≈ 120 m di raggio alla base.
 
-```
-[pianoro del falò] → PARETE del bioma: salto, cengia stretta, salto, cengia, … → [pianoro del falò]
-```
+### 2. Il nucleo (`bakeCore`)
+Una heightmap a gradoni (pareti ripide e spalle piane), con la pianta deformata da "lobi" di
+rumore per non essere un cerchio. **Non è la forma che si vede**: serve a riempire la montagna
+(niente buchi tra i macigni) e a dare il piano delle spalle.
 
-Ogni bioma è una grande parete alta 50–100 m (`face.height`), fatta di salti di roccia
-(`face.cliff`, 7–16 m a 70–86°) separati solo da cenge strette (`face.ledge`, 3–6 m). Il tratto
-piano largo c'è **solo tra un bioma e l'altro**, dove sta il falò. In totale ≈ 350 m in avanti per
-≈ 340 m di salita: dentro un bioma si sale quasi in verticale. Il profilo si vede nella mappa
-(tasto M).
+### 3. I macigni (`src/boulders.js`, `placeBoulders`)
+Ogni modello è un **poliedro convesso**: una scatola tagliata da 6–11 piani a caso. Da quella sola
+definizione escono tre cose:
+- la **mesh** (32–48 triangoli), disegnata con l'instancing: una chiamata per modello;
+- la **distanza** da un punto alla roccia, che per un convesso è `max_i (n_i · p − d_i)`;
+- le **facce**, da cui si ricavano le cenge.
 
-**Baie e speroni** (`bays`): ogni bioma ha alcune gobbe gaussiane lungo `x` che spostano tutta la
-sua parete avanti o indietro, creando rientranze ad anfiteatro e speroni sporgenti. Il passaggio
-da un bioma all'altro avviene sul pianoro del falò, che è piatto e quindi non si deforma.
+Ci sono 8 modelli (blocchi, lastre, pilastri, cunei). `placeBoulders` ne appoggia ≈ 3300 sulle
+pareti del nucleo: per ogni bioma il seed sceglie punto, modello, scala, rotazione e inclinazione.
+Una parte è messa "in piano" (`flat`), così la cima è una cengia sicura; il resto è inclinato a
+caso e crea falde, spigoli e **strapiombi**. Alcuni macigni sono speciali: ghiacciati, coperti di
+liane, o di lava.
 
-### 2. Rappresentazione: heightmap `y = h(x, z)` + ondulazione
-Il terreno è una heightmap (una cella ogni 0,6 m). Il profilo da solo darebbe pareti dritte come
-gradini di una scala, quindi si usa un trucco: `z' = z − shift(x, z)`, dove `shift` è rumore a bassa
-frequenza. Il profilo viene valutato in `z'` e così le pareti si piegano in curve e speroni.
-Tutti i timbri (fase 3) lavorano nel sistema "raddrizzato" `(x, z')`, dove le pareti sono linee
-dritte e posizionare un passaggio è banale.
+### 4. Campo di distanza (`sdf`, `normal`)
+`world.sdf(x, y, z)` = distanza dalla roccia più vicina (negativa dentro): il minimo tra il nucleo
+e i macigni vicini, trovati con una griglia 3D a celle di 8 m. È tutta la fisica che serve: la
+collisione è "se la sfera entra nella roccia, spingila fuori lungo la normale", e vale per pareti,
+spigoli, strapiombi e soffitti senza casi speciali.
 
-```
-h = profilo(z') + Σ_biomi peso(z') · forma_bioma(x, y, z) + timbri(x, z') − caduta_ai_lati(x)
-```
+### 5. Cenge (`bakeTop`, `collectRests`)
+Non sono disegnate: sono le superfici in piano che capitano. `bakeTop` calcola per ogni cella di
+1 m la **superficie più alta** (scendendo dall'alto nel campo di distanza); ogni punto calpestabile
+e libero sopra diventa un **appoggio** (≈ 10.000). Si aggiungono le facce in piano dei macigni che
+stanno sotto uno strapiombo. La stessa mappa delle cime serve a erba, oggetti e mappa (tasto M).
 
-- **forma** (`shape`): rumore Perlin 3D (`fbm` per roccia irregolare, `ridged` per creste e solchi);
-- **fusione tra biomi**: nei `TRANSITION` metri al confine i biomi si mescolano con pesi che sommano a 1;
-- **lati**: oltre la mezza larghezza del corridoio (che si stringe salendo) il terreno scende in
-  mare con un bordo irregolare.
+### 6. Vie (`validateRoutes` + `src/pathfind.js`)
+Il validatore lavora su un **grafo di appoggi**: da un appoggio si passa a un altro camminando
+(vicini e alla stessa quota), saltando giù, o **arrampicando**, se il tratto di parete tra i bordi
+delle due cenge sta nel budget di stamina (`climbReach`, con le stesse regole del giocatore in
+`src/rules.js`: ghiaccio ×1,6, liane ×0,55, ≈ 6 m su roccia). Una via è un cammino nel grafo.
+- Per ogni tappa (spiaggia → falò 1 → … → vetta) si cerca la via A, si vietano gli appoggi entro
+  `ROUTE_SEPARATION` da lei (tranne vicino ai falò) e si cerca la B, poi la C.
+- Se le vie sono meno di `MIN_ROUTES` (2), si **aggiunge un appoggio**: una lastra piana a portata
+  di braccio dal punto raggiunto più vicino al traguardo. Con i macigni succede di rado: di solito
+  0–8 lastre su tutta la montagna.
+- Le vie verificate sono solo una garanzia: si può salire da qualunque lato.
 
-Limite di una heightmap: niente strapiombi né grotte. Per quelli servirebbe un campo di distanza (SDF) 3D.
+### 7. Oggetti, cibo e valigie (`scatterProps`, `placeLoot`)
+Si provano posizioni casuali e si tengono quelle su una cima piana, libera sopra, nel bioma giusto
+e a distanza minima dagli altri oggetti. Cibo e valigie stanno sugli appoggi delle vie verificate e
+vicino ai falò.
 
-### 3. Timbri: falò, passaggi e cenge (`placeCampfires`, `placePassages`)
-- **Falò**: una spianata in fondo a ogni bioma; la vetta ha la sua spianata con la bandiera.
-- **Passaggi** (fino a 3 per parete, a ≥ 30 m di distanza, **di tipo diverso sulla stessa parete**):
-  - `ramp`, cengia diagonale: sale lungo la parete, si fa camminando ma è lunga e va di lato;
-  - `stairs`, gradoni: alzate di 3–4 m con pedate piatte dove riposarsi;
-  - `gully`, canalone: un taglio a 50–58° invece di 75°, con liane nella giungla (costano meno).
-- **Cenge naturali** (`notch`): piccole spianate sparse sulle pareti, densità per m² dal bioma.
-- **Ripari alla base** (`coves`): rientranze scavate nel piede dei salti. Aggiungono complessità
-  alla forma senza aggiungere difficoltà: sono punti di riposo in più.
-
-Sulle cenge il rumore del terreno viene attenuato (`amp` in `profile`), così la complessità sta
-sulle pareti e le cenge restano percorribili: il validatore continua a garantire almeno 2 vie.
-
-### 4. Cottura (`bakeRows`), la parte costosa
-Tutto quanto sopra viene valutato **una sola volta** per ogni cella (≈ 360 × 1300) e salvato in
-`Float32Array`. Da lì in poi nessuno ricalcola il rumore: fisica, grafica, validatore e mappa
-leggono la stessa griglia (`src/surface.js`), quindi ciò che vedi è esattamente ciò che tocchi.
-Poi `computeDerived` calcola la normale: se la sua componente verticale supera `STAND_UP` (≈ 50°)
-la cella è **calpestabile** (ci si cammina e ci si riposa), altrimenti è parete.
-
-### 5. Materiali (`paintRows`)
-Ogni bioma decide il materiale della cella: ghiaccio dove un rumore è alto, strisce verticali di
-liane, fiumi di lava nei solchi della caldera, neve sui pianori; i canaloni impongono il loro.
-Ai confini il bioma della cella viene scelto con un **dithering** pesato, così i colori si
-mescolano "a puntini" invece di avere una linea.
-
-### 6. Più vie garantite (`validateRoutes` + `src/pathfind.js`)
-È la fase che rende la generazione *giusta* e non solo bella. Per ogni tratto (spiaggia → falò 1,
-falò 1 → falò 2, …, ultimo falò → vetta):
-
-1. **Via A**: un **Dijkstra sulla griglia** in cui il costo è la *stamina consumata dall'ultimo
-   riposo*. Camminare su terreno piano riporta il costo a 0; arrampicarsi costa secondo
-   `climbCost()` in `src/rules.js` (ghiaccio ×1,9, liane ×0,55, parete verticale ×1,6; la lava e
-   l'acqua non si attraversano). Una mossa che supera `ROUTE_SAFETY` (60 % della barra, per lasciare
-   margine alle afflizioni) non è possibile.
-2. **Via B, C…**: si **vietano** le celle di parete entro `ROUTE_SEPARATION` (11 m) dai punti in cui
-   la via A supera una parete, e si cerca di nuovo. I pianori restano condivisibili: le vie
-   possono attraversarsi, ma **ogni parete va salita in un punto diverso**. Vicino ai falò e alla
-   vetta non si vieta niente, perché lì le vie convergono.
-3. Se le vie trovate sono meno di `MIN_ROUTES` (2), il **riparatore** prende la cella di parete
-   raggiungibile più vicina al traguardo *nella zona ancora libera* e ci scava una piccola cengia.
-   Il percorso fino a lì resta valido, quindi ogni riparazione fa avanzare, e siccome lavora fuori
-   dal corridoio vietato **crea una via nuova** invece di rinforzare quella vecchia. La terza via
-   non viene mai riparata: o la montagna la offre o no.
-4. Ogni via viene classificata in base a quanta parte del dislivello si guadagna arrampicando:
-   **sentiero** (< 30 %), **misto**, **parete** (> 65 %). Nella mappa M trovi l'elenco per tratto
-   ("A: sentiero sinistra · B: parete centro…") e le vie colorate (bianco, azzurro, giallo); in 3D
-   con il tasto P.
-
-Il punto chiave è che **generatore e giocatore usano le stesse regole** (`src/rules.js`). Se cambi
-il movimento, cambia lì i costi e il generatore continuerà a garantire vie scalabili con il tuo
-movimento.
-
-### 7. Oggetti, cibo e valigie (`scatterProps`, `placeFood`, `placeLuggage`)
-"Dart throwing" (la versione semplice del Poisson-disc sampling): per ogni regola del bioma si
-provano `tries` posizioni casuali e si tengono solo quelle su terreno piano, nel bioma giusto e a
-distanza minima `spacing` dagli altri oggetti (hash spaziale). Il **cibo** viene messo lungo
-**ogni** via validata, così anche la via difficile ha le sue ricompense. Le **valigie** (due vicino a
-ogni falò, una lungo ogni via) contengono un oggetto scelto dal seed.
+### Materiale per pendenza
+Come nel gioco originale, il colore non è dipinto per zone: ogni macigno ha il colore di roccia
+del suo bioma, e lo shader mette il colore "di cima" (sabbia, muschio, neve, cenere) sulle facce
+che guardano in alto (`buildMountain` in `src/render.js`).
 
 ### Nebbia che sale (`src/fog.js`, parametri `FOG` in `src/rules.js`)
 È la pressione del gioco. A ogni tappa (alla partenza, poi a ogni falò acceso) la nebbia aspetta
 `delay` secondi, poi sale di `speed` m/s fino a poco sotto il falò **successivo** e lì si ferma
 finché non lo raggiungi. Dentro la nebbia cresce l'afflizione viola "nebbia", che riduce la barra
-come le altre; fuori passa lentamente. Se svieni, la nebbia torna sotto l'ultimo falò e ricomincia
-l'attesa. Nell'HUD, in basso a destra, vedi tra quanto parte o quanti metri è sotto di te.
+come le altre; fuori passa lentamente. Se svieni, la nebbia torna sotto l'ultimo falò.
 
 ### Oggetti (`ITEMS` in `src/rules.js`, logica in `player.js`)
-- **Chiodo** (F in parete): resta piantato dove sei; appeso a un chiodo recuperi stamina invece di
-  consumarla. Si parte con 2.
+- **Chiodo** (F in parete): resta piantato dove sei; appeso a un chiodo recuperi stamina. Si parte con 2.
 - **Benda** (1): toglie il 30 % di ferite. **Energetico** (2): stamina piena e arrampicata meno
   faticosa per 25 s.
 - **Marshmallow** (F vicino a un falò): toglie fame, uno ogni 25 s.
-
-Le vie sono garantite **senza** oggetti: chiodi ed energetici sono un aiuto in più.
 
 ---
 
@@ -207,9 +166,10 @@ climber/
 │   ├── rng.js          seed, hash, RNG con fork
 │   ├── noise.js        Perlin 3D, fbm, ridged
 │   ├── biomes.js       ★ definizione dei biomi e degli slot (dati + piccole funzioni)
-│   ├── surface.js      la heightmap cotta e le query (quota, pendenza, materiale…)
-│   ├── generator.js    ★ la pipeline in 7 fasi
-│   ├── pathfind.js     ★ validatore (Dijkstra con riposi e celle vietate)
+│   ├── boulders.js     ★ i modelli di macigno: poliedri convessi (mesh + distanza + facce)
+│   ├── surface.js      griglia a celle (nucleo e mappa delle cime)
+│   ├── generator.js    ★ la pipeline: nucleo, macigni, campo di distanza, cenge, vie
+│   ├── pathfind.js     ★ grafo degli appoggi e ricerca delle vie
 │   ├── render.js       mesh three.js (terreno a blocchi, oggetti instanziati, cielo)
 │   ├── fog.js          nebbia che sale a ogni tappa
 │   ├── player.js       movimento segnaposto + afflizioni e oggetti
@@ -221,7 +181,7 @@ climber/
 ```
 
 Dalla console del browser puoi esplorare tutto: `world.layout.biomes`, `world.route.segments`,
-`world.terrain.height(x, z)`, `world.stats`.
+`world.sdf(x, y, z)`, `world.graph`, `world.boulders`, `world.stats`.
 
 ---
 
@@ -230,16 +190,15 @@ Dalla console del browser puoi esplorare tutto: `world.layout.biomes`, `world.ro
 `player.js` è isolato. Dal mondo usa solo:
 
 ```js
-const T = world.terrain;
-T.height(x, z)      // quota del terreno
-T.gradient(x, z)    // [dh/dx, dh/dz]: la direzione in cui si sale
-T.upNormal(x, z)    // 1 = piano, 0 = parete verticale
-T.material(x, z)    // MAT.ICE, MAT.VINE, MAT.LAVA, ...
+world.sdf(x, y, z)           // distanza dalla roccia: <0 dentro, >0 fuori
+world.normal(x, y, z, out)   // normale della roccia più vicina (verso l'esterno)
+world.materialAt(x, y, z)    // MAT.ICE, MAT.VINE, MAT.LAVA, ...
 ```
 
-Il segnaposto cammina finché la pendenza lo permette. In arrampicata si muove *sulla* superficie
-lungo il gradiente (avanti = su, A/D = di lato) e torna a camminare da solo quando il terreno
-torna piano, cioè quando arriva in cima alla parete o su una cengia.
+Il segnaposto è fatto di due sfere (bacino e testa) spinte fuori dalla roccia. In arrampicata il
+corpo resta a contatto con la superficie e si muove nel piano tangente: così gira gli spigoli,
+passa sotto gli strapiombi (che costano di più) e torna in piedi da solo quando la roccia torna
+in piano.
 
 e da `main.js` riceve `update(dt, input, camYaw)` con `input = { fwd, right, jump, sprint, grab }`.
 Puoi riscriverlo da zero tenendo la stessa interfaccia (posizione in `x, y, z`, `stamina`, `mode`,

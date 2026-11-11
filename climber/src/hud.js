@@ -60,77 +60,65 @@ export class Hud {
     setTimeout(() => el.remove(), 3200);
   }
 
-  // vista dall'alto con ombreggiatura del rilievo
+  // vista dall'alto della mappa delle cime, con ombreggiatura del rilievo
   buildMap() {
-    const w = this.world, T = w.terrain, nx = T.nx, nz = T.nz;
+    const w = this.world, T = w.top, nx = T.nx, nz = T.nz;
     const cv = $('map-canvas');
     cv.width = nx; cv.height = nz;
     const ctx = cv.getContext('2d');
     const img = ctx.createImageData(nx, nz);
-    const pal = w.layout.sections.map(b => ({ wall: hex(b.def.palette.wall), ledge: hex(b.def.palette.ledge) }));
-    const MC = { [MAT.ICE]: [150, 210, 240], [MAT.VINE]: [60, 150, 50], [MAT.LAVA]: [255, 90, 20], [MAT.SNOW]: [240, 244, 248], [MAT.SAND]: [226, 207, 152] };
-    const L = [-0.5, 0.75, -0.45];
+    const pal = w.layout.bands.map(b => ({ rock: hex(b.def.rock), top: hex(b.def.top) }));
+    const MC = { [MAT.ICE]: [150, 210, 240], [MAT.VINE]: [60, 150, 50], [MAT.LAVA]: [255, 90, 20] };
+    const L = [-0.5, 0.75, -0.45], H = T.H;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const c = j * nx + i, o = ((nz - 1 - j) * nx + i) * 4, H = T.H;
-      let rgb;
-      if (H[c] < SEA) rgb = [42, 110, 160];
-      else rgb = MC[T.M[c]] || ((T.F[c] & FLAG_STAND) ? pal[T.B[c]].ledge : pal[T.B[c]].wall);
-      const gx = (H[c + (i < nx - 1 ? 1 : 0)] - H[c - (i > 0 ? 1 : 0)]) / (2 * T.C);
-      const gz = (H[c + (j < nz - 1 ? nx : 0)] - H[c - (j > 0 ? nx : 0)]) / (2 * T.C);
-      const nl = Math.hypot(gx, 1, gz);
-      const shade = 0.55 + 0.6 * Math.max(0, (-gx * L[0] + L[1] - gz * L[2]) / nl);
+      const c = j * nx + i, o = ((nz - 1 - j) * nx + i) * 4;
+      let rgb = H[c] < SEA ? [42, 130, 160] : MC[T.M[c]] || ((T.F[c] & FLAG_STAND) ? pal[T.B[c]].top : pal[T.B[c]].rock);
+      const gx = Math.max(-3, Math.min(3, (H[c + (i < nx - 1 ? 1 : 0)] - H[c - (i > 0 ? 1 : 0)]) / (2 * T.C)));
+      const gz = Math.max(-3, Math.min(3, (H[c + (j < nz - 1 ? nx : 0)] - H[c - (j > 0 ? nx : 0)]) / (2 * T.C)));
+      const shade = 0.55 + 0.6 * Math.max(0, (-gx * L[0] + L[1] - gz * L[2]) / Math.hypot(gx, 1, gz));
       img.data[o] = rgb[0] * shade; img.data[o + 1] = rgb[1] * shade; img.data[o + 2] = rgb[2] * shade; img.data[o + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    this.mapCtx = ctx;
     const px = x => (x - T.x0) / T.C, pz = z => nz - 1 - (z - T.z0) / T.C;
     this.px = px; this.pz = pz;
     for (const seg of w.route.segments) for (const route of seg.routes) {
-      ctx.strokeStyle = ROUTE_COLORS[route.index]; ctx.lineWidth = 2.5; ctx.beginPath();
-      route.path.forEach(([i, j], k) => (k ? ctx.lineTo(i, nz - 1 - j) : ctx.moveTo(i, nz - 1 - j)));
+      ctx.strokeStyle = ROUTE_COLORS[route.index]; ctx.lineWidth = 1.6; ctx.beginPath();
+      route.points.forEach(([x, , z], k) => (k ? ctx.lineTo(px(x), pz(z)) : ctx.moveTo(px(x), pz(z))));
       ctx.stroke();
     }
     ctx.fillStyle = '#ff2bd6';
-    for (const r of w.route.repairs) ctx.fillRect(px(r.x) - 2, pz(r.z) - 2, 5, 5);
+    for (const r of w.route.repairs) ctx.fillRect(px(r.x) - 1.5, pz(r.z) - 1.5, 4, 4);
     ctx.fillStyle = '#ffa630';
-    for (const f of w.campfires) { ctx.beginPath(); ctx.arc(px(f.x), pz(f.z), 7, 0, Math.PI * 2); ctx.fill(); }
+    for (const f of w.campfires) { ctx.beginPath(); ctx.arc(px(f.x), pz(f.z), 4.5, 0, Math.PI * 2); ctx.fill(); }
     ctx.fillStyle = '#e8452c';
-    ctx.beginPath(); ctx.arc(px(w.peak.x), pz(w.peak.z), 7, 0, Math.PI * 2); ctx.fill();
-    ctx.font = 'bold 15px sans-serif';
-    for (const b of w.layout.sections) {
-      const y = pz(b.z0) - 8;
-      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(4, y - 14, ctx.measureText(b.name).width + 8, 19);
-      ctx.fillStyle = '#fff'; ctx.fillText(b.name, 8, y);
-    }
+    ctx.beginPath(); ctx.arc(px(w.peak.x), pz(w.peak.z), 4.5, 0, Math.PI * 2); ctx.fill();
     $('map-wrap').style.setProperty('--ar', nx / nz);
     this.overlay = $('map-overlay');
     this.overlay.width = nx; this.overlay.height = nz;
   }
 
-  // profilo altimetrico: avanti (z) → e quota (y) ↑, con le vie
+  // profilo: la sagoma della montagna vista di lato, con le vie (quota in funzione della distanza dal centro)
   buildProfile() {
-    const w = this.world, T = w.terrain, cv = $('profile-canvas');
-    const W = cv.width = 640, Hh = cv.height = 220, pad = 18;
+    const w = this.world, T = w.top, cv = $('profile-canvas');
+    const W = cv.width = 640, Hh = cv.height = 240, pad = 16, R = w.layout.islandRadius + 10;
     const ctx = cv.getContext('2d');
-    const sx = z => pad + ((z - T.z0) / (T.nz * T.C)) * (W - 2 * pad);
-    const sy = y => Hh - pad - (Math.max(SEA, y) / (w.height + 10)) * (Hh - 2 * pad);
+    const sx = r => W / 2 + (r / R) * (W / 2 - pad), sy = y => Hh - pad - (Math.max(SEA, y) / (w.height + 12)) * (Hh - 2 * pad);
     ctx.fillStyle = '#1b2733'; ctx.fillRect(0, 0, W, Hh);
-    ctx.fillStyle = '#5d6670';
-    ctx.beginPath(); ctx.moveTo(sx(T.z0), sy(SEA));
-    for (let j = 0; j < T.nz; j += 2) {
-      let m = -20; for (let i = 0; i < T.nx; i += 3) m = Math.max(m, T.H[j * T.nx + i]);
-      ctx.lineTo(sx(T.zOf(j)), sy(m));
+    const pal = w.layout.bands.map(b => b.def.rock);
+    for (let i = 0; i < T.nx; i++) {            // sagoma: per ogni x la cima più alta lungo z
+      let m = -20, band = 0;
+      for (let j = 0; j < T.nz; j += 2) { const c = j * T.nx + i; if (T.H[c] > m) { m = T.H[c]; band = T.B[c]; } }
+      if (m < SEA) continue;
+      ctx.fillStyle = pal[band]; ctx.fillRect(sx(T.xOf(i)), sy(m), Math.ceil((W - 2 * pad) / (2 * R)) + 1, sy(SEA) - sy(m));
     }
-    ctx.lineTo(sx(T.zOf(T.nz - 1)), sy(SEA)); ctx.fill();
     for (const seg of w.route.segments) for (const route of seg.routes) {
-      ctx.strokeStyle = ROUTE_COLORS[route.index]; ctx.lineWidth = 1.5; ctx.beginPath();
-      route.path.forEach(([i, j], k) => { const X = sx(T.zOf(j)), Y = sy(T.H[j * T.nx + i]); k ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+      ctx.strokeStyle = ROUTE_COLORS[route.index]; ctx.lineWidth = 1.3; ctx.beginPath();
+      route.points.forEach(([x, y], k) => (k ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))));
       ctx.stroke();
     }
     ctx.fillStyle = '#ffa630';
-    for (const f of w.campfires) { ctx.beginPath(); ctx.arc(sx(f.z), sy(f.y), 4, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = '#aab3bd'; ctx.font = '11px sans-serif';
-    ctx.fillText('avanti →', W - 70, Hh - 4); ctx.fillText('↑ quota', 4, 12);
+    for (const f of w.campfires) { ctx.beginPath(); ctx.arc(sx(f.x), sy(f.y), 4, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#aab3bd'; ctx.font = '11px sans-serif'; ctx.fillText('↑ quota · vista di lato', 4, 12);
   }
 
   drawPlayer(p) {
@@ -142,19 +130,18 @@ export class Hud {
 
   buildStats() {
     const w = this.world, st = w.stats;
-    const names = w.layout.sections.map(b => b.name).concat(['Vetta']);
+    const names = w.layout.bands.map(b => b.name);
     const lines = [
       `seed "${w.seed}" → hash ${w.seedHash.toString(16)}`,
-      `lunghezza ${w.length.toFixed(0)} m · quota vetta ${w.height.toFixed(0)} m · griglia ${w.terrain.nx}×${w.terrain.nz}`,
-      ...w.layout.sections.map(b => `${b.name.padEnd(17)} ${b.cliffs.length} pareti` +
-        (b.slot.length > 1 ? `  (scelto tra: ${b.slot.join(', ')})` : '')),
-      `passaggi: ${st.passages} · cenge naturali: ${st.notches} · riparazioni: ${st.repairs}`,
+      `quota vetta ${w.height.toFixed(0)} m · raggio alla base ${w.layout.baseRadius.toFixed(0)} m`,
+      `${st.boulders} macigni da ${st.shapes} modelli · ${st.rests} appoggi · ${st.repairs} appoggi aggiunti`,
+      ...w.layout.bands.map(b => `${b.y0.toFixed(0).padStart(3)}–${b.y1.toFixed(0).padEnd(3)} m  ${b.name}` + (b.slot.length > 1 ? `  (scelto tra: ${b.slot.join(', ')})` : '')),
       '',
-      'VIE PER TRATTO',
-      ...w.route.segments.map((g, k) => `${k === 0 ? 'Partenza' : 'Falò ' + k} → ${k === w.route.segments.length - 1 ? 'Vetta' : 'Falò ' + (k + 1)}` +
-        ` (${names[k]})${g.repairs ? `, ${g.repairs} riparaz.` : ''}\n` +
-        g.routes.map(r => `   ${r.label}: ${r.kind.padEnd(8)} ${r.side.padEnd(8)} dislivello in arrampicata ${Math.round(r.climbFrac * 100)}%` +
-          (r.vine > 5 ? ' · liane' : '') + (r.ice > 5 ? ' · ghiaccio' : '')).join('\n')),
+      'VIE PER TAPPA',
+      ...w.route.segments.map((g, k) => `${k === 0 ? 'Spiaggia' : 'Falò ' + k} → ${k === w.route.segments.length - 1 ? 'Vetta' : 'Falò ' + (k + 1)}` +
+        ` (${names[k]})${g.repairs ? `, ${g.repairs} appoggi aggiunti` : ''}\n` +
+        g.routes.map(r => `   ${r.label}: ${r.kind.padEnd(7)} ${r.hops} appoggi · in parete ${Math.round(r.climb)} m` +
+          (r.vine > 4 ? ' · liane' : '') + (r.ice > 4 ? ' · ghiaccio' : '')).join('\n')),
       '',
       `tempi (ms): ${Object.entries(st.timings).map(([k, v]) => `${k} ${v}`).join(' · ')}`,
     ];

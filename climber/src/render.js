@@ -103,74 +103,106 @@ export class WorldView {
     this.time = 0;
   }
 
-  // ── il terreno: heightmap → vertici, a blocchi di righe ────────────────────
+  // ── la montagna: NUCLEO (heightmap, quasi sempre nascosto) + MACIGNI instanziati ──
   buildMountain() {
-    const w = this.world, T = w.terrain, nx = T.nx, H = T.H;
-    const pal = w.layout.sections.map(b => ({
-      wall: col(b.def.palette.wall), wall2: col(b.def.palette.wall2), ledge: col(b.def.palette.ledge),
-      bands: b.def.palette.bands ? b.def.palette.bands.map(col) : null, bandH: b.def.palette.bandHeight,
-    }));
-    const matCol = MAT_INFO.map(m => (m.color ? new THREE.Color().setRGB(...m.color, THREE.SRGBColorSpace) : null));
-    matCol[MAT.LAVA] = new THREE.Color(3.0, 0.7, 0.08); // >1: "brilla" anche senza luce
-    const seabed = col('#c9b27a');
-    const N = w.noise, tmp = new THREE.Color();
-    // toon con rampa morbida: il terreno prende la luce "a pennellate" ma senza bande nette
-    const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: RAMP_TERRAIN });
-    // dettaglio triplanare: texture tue (assets/manifest.json) o procedurali
+    const w = this.world, T = w.core, nx = T.nx, H = T.H;
+    const bands = w.layout.bands.map(b => ({ rock: col(b.def.rock), top: col(b.def.top) }));
     const tx = this.assets.textures;
-    addTriplanarDetail(mat, tx.rock || proceduralDetail('rock', 256, 3), tx.ground || proceduralDetail('ground', 256, 7));
+    const rockTex = tx.rock || proceduralDetail('rock', 256, 3), groundTex = tx.ground || proceduralDetail('ground', 256, 7);
     this.mountain = new THREE.Group();
 
+    // nucleo: colore per pendenza (piano = ciò che si posa, ripido = roccia)
+    const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: RAMP_TERRAIN });
+    addTriplanarDetail(mat, rockTex, groundTex);
+    const seabed = col('#c9b27a'), tmp = new THREE.Color();
     for (let j0 = 0; j0 < T.nz - 1; j0 += ROWS_PER_CHUNK) {
-      const j1 = Math.min(T.nz - 1, j0 + ROWS_PER_CHUNK);
-      const nr = j1 - j0 + 1;
+      const j1 = Math.min(T.nz - 1, j0 + ROWS_PER_CHUNK), nr = j1 - j0 + 1;
       const pos = new Float32Array(nr * nx * 3), nor = new Float32Array(nr * nx * 3), clr = new Float32Array(nr * nx * 3);
       for (let jj = 0; jj < nr; jj++) {
         const j = j0 + jj, jm = Math.max(0, j - 1), jp = Math.min(T.nz - 1, j + 1);
         for (let i = 0; i < nx; i++) {
-          const v = (jj * nx + i) * 3, c = j * nx + i, y = H[c];
-          const im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
+          const v = (jj * nx + i) * 3, c = j * nx + i, y = H[c], im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
           pos[v] = T.xOf(i); pos[v + 1] = y; pos[v + 2] = T.zOf(j);
-          // normale dal gradiente della heightmap
-          const gx = (H[j * nx + ip] - H[j * nx + im]) / ((ip - im) * T.C);
-          const gz = (H[jp * nx + i] - H[jm * nx + i]) / ((jp - jm) * T.C);
+          const gx = (H[j * nx + ip] - H[j * nx + im]) / ((ip - im) * T.C), gz = (H[jp * nx + i] - H[jm * nx + i]) / ((jp - jm) * T.C);
           const nl = Math.hypot(gx, 1, gz);
           nor[v] = -gx / nl; nor[v + 1] = 1 / nl; nor[v + 2] = -gz / nl;
-          // colore: materiale > piano > bande > parete (con variazione e finta occlusione)
-          const pl = pal[T.B[c]], m = T.M[c];
-          if (y < SEA + 0.3) tmp.copy(seabed);
-          else if (matCol[m]) tmp.copy(matCol[m]);
-          else if (T.F[c] & FLAG_STAND) tmp.copy(pl.ledge);
-          else if (pl.bands) tmp.copy(pl.bands[(((Math.floor((y + 2 * N.perlin(i * 0.05, 0.5, j * 0.01)) / pl.bandH)) % pl.bands.length) + pl.bands.length) % pl.bands.length]);
-          else tmp.copy(pl.wall).lerp(pl.wall2, 0.5 + 0.5 * N.perlin(i * 0.11, y * 0.15, j * 0.07));
-          const around = (H[j * nx + ip] + H[j * nx + im] + H[jp * nx + i] + H[jm * nx + i]) / 4;
-          const ao = Math.min(1.08, Math.max(0.6, 1 - (around - y) * 0.12));
-          const k = ao * (0.9 + 0.2 * hash2(i, j, 7));
+          const bd = bands[w.bandAt(y - 0.5).index];
+          if (y < SEA + 0.3) tmp.copy(seabed); else tmp.copy(bd.rock).lerp(bd.top, Math.min(1, Math.max(0, (1 / nl - 0.6) / 0.2)));
+          const k = 0.92 + 0.16 * hash2(i, j, 7);
           clr[v] = tmp.r * k; clr[v + 1] = tmp.g * k; clr[v + 2] = tmp.b * k;
         }
       }
       const idx = [];
-      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < nx - 1; i++) {
-        const a = jj * nx + i, b = a + 1, c2 = a + nx, d = c2 + 1;
-        idx.push(a, c2, b, b, c2, d);
-      }
+      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < nx - 1; i++) { const a = jj * nx + i, b = a + 1, c2 = a + nx, d = c2 + 1; idx.push(a, c2, b, b, c2, d); }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(clr, 3));
-      geo.setIndex(idx);
-      geo.computeBoundingSphere();
+      geo.setIndex(idx); geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true; mesh.receiveShadow = true;
       this.mountain.add(mesh);
     }
+
+    // macigni: UNA geometria per modello, disegnata centinaia di volte (instancing).
+    // Per ogni copia: matrice (posizione, rotazione, scala), colore della roccia e colore "di cima".
+    // Lo shader mette il colore di cima sulle facce che guardano in alto: sabbia, muschio, neve…
+    const boulderMat = toon({ rim: 0.18, patch: shader => {
+      shader.uniforms.uRock = { value: rockTex }; shader.uniforms.uRockAvg = { value: rockTex.userData.avgLum || 0.5 };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec3 iTop; varying vec3 vTop; varying vec3 vWN; varying vec3 vWP;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          vTop = iTop;
+          vWN = normalize(mat3(instanceMatrix) * objectNormal);
+          vWP = (instanceMatrix * vec4(transformed, 1.0)).xyz;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vTop; varying vec3 vWN; varying vec3 vWP; uniform sampler2D uRock; uniform float uRockAvg;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          {
+            vec3 bw = pow(abs(vWN), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+            vec3 tA = texture2D(uRock, vWP.zy * 0.3).rgb, tB = texture2D(uRock, vWP.xz * 0.3).rgb, tC = texture2D(uRock, vWP.xy * 0.3).rgb;
+            float lum = dot(tA * bw.x + tB * bw.y + tC * bw.z, vec3(0.299, 0.587, 0.114)) / uRockAvg;
+            diffuseColor.rgb *= mix(1.0, clamp(lum, 0.4, 1.7), 0.55);
+            // ciò che "si posa" sulle facce in piano, con un bordo un po' irregolare
+            float topF = smoothstep(0.58, 0.74, vWN.y + (lum - 1.0) * 0.12);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vTop, topF);
+          }`);
+    } });
+    const KIND = { [MAT.ICE]: col('#a9d8ee'), [MAT.VINE]: col('#3f7a2c') };
+    const lava = new THREE.Color(2.6, 0.55, 0.08);
+    const m4 = new THREE.Matrix4(), c1 = new THREE.Color(), c2 = new THREE.Color();
+    w.shapes.forEach((shape, sid) => {
+      const list = w.boulders.filter(b => b.shape === sid);
+      if (!list.length) return;
+      // mesh del poliedro: un ventaglio di triangoli per faccia, normali piatte (roccia sfaccettata)
+      const pos = [], nor = [];
+      for (const f of shape.faces) for (let k = 1; k < f.verts.length - 1; k++) for (const v of [f.verts[0], f.verts[k], f.verts[k + 1]]) { pos.push(v[0], v[1], v[2]); nor.push(f.n[0], f.n[1], f.n[2]); }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      const tops = new Float32Array(list.length * 3);
+      const mesh = new THREE.InstancedMesh(geo, boulderMat, list.length);
+      list.forEach((b, k) => {
+        const m = b.m, s = b.s;
+        m4.set(m[0] * s, m[1] * s, m[2] * s, b.x, m[3] * s, m[4] * s, m[5] * s, b.y, m[6] * s, m[7] * s, m[8] * s, b.z, 0, 0, 0, 1);
+        mesh.setMatrixAt(k, m4);
+        const bd = bands[b.band], v = 0.86 + 0.28 * hash2(b.id, 3, 5);
+        c1.copy(b.kind === MAT.LAVA ? bd.rock : KIND[b.kind] || bd.rock).multiplyScalar(v);
+        c2.copy(b.kind === MAT.LAVA ? lava : b.kind === MAT.ICE ? KIND[MAT.ICE] : bd.top).multiplyScalar(b.kind === MAT.LAVA ? 1 : 0.94 + 0.12 * hash2(b.id, 9, 5));
+        mesh.setColorAt(k, c1);
+        tops[k * 3] = c2.r; tops[k * 3 + 1] = c2.g; tops[k * 3 + 2] = c2.b;
+      });
+      geo.setAttribute('iTop', new THREE.InstancedBufferAttribute(tops, 3));
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      this.mountain.add(mesh);
+    });
     this.scene.add(this.mountain);
   }
 
   buildIsland() {
     const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000),
       new THREE.MeshStandardMaterial({ color: '#27a9c9', roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.82 }));
-    water.rotation.x = -Math.PI / 2; water.position.set(0, SEA, this.world.length / 2);
+    water.rotation.x = -Math.PI / 2; water.position.set(0, SEA, 0);
     this.scene.add(water);
   }
 
@@ -286,7 +318,7 @@ export class WorldView {
     this.sky = sky;
     this.scene.add(sky);
     this.scene.fog = new THREE.Fog('#ffffff', 40, 400);
-    this.envColors = this.world.layout.sections.map(b => ({
+    this.envColors = this.world.layout.bands.map(b => ({
       top: col(b.def.sky.top), bottom: col(b.def.sky.bottom), fog: col(b.def.sky.fog), far: b.def.sky.far,
     }));
   }
@@ -296,7 +328,7 @@ export class WorldView {
     this.fogTime = { value: 0 };
     this.fogColor = new THREE.Color('#d9e2ec');
     this.fogLayers = new THREE.Group();
-    const geo = new THREE.PlaneGeometry(2400, 2400);
+    const geo = new THREE.PlaneGeometry(9000, 9000);
     const N = 7;
     for (let k = 0; k < N; k++) {
       const mat = new THREE.ShaderMaterial({
@@ -344,7 +376,8 @@ export class WorldView {
     for (const f of [...w.campfires, w.peak]) {
       for (let k = 0; k < 18; k++) {
         const side = rnd() < 0.5 ? -1 : 1, sp = new THREE.Sprite(mat);
-        sp.position.set(side * (170 + rnd() * 300), f.y - 4 + rnd() * 26, f.z - 60 + rnd() * 240);
+        const ca = rnd() * Math.PI * 2, cr = this.world.layout.islandRadius + 60 + rnd() * 320;
+        sp.position.set(Math.cos(ca) * cr, f.y - 4 + rnd() * 26, Math.sin(ca) * cr);
         const sc = 50 + rnd() * 70; sp.scale.set(sc * 1.7, sc * 0.75, 1);
         sp.userData.drift = 0.6 + rnd();
         this.clouds.add(sp);
@@ -389,23 +422,16 @@ export class WorldView {
 
   // vie garantite (P) e riparazioni: strumenti per capire la generazione
   buildDebug() {
-    const T = this.world.terrain;
     this.debug = new THREE.Group();
     for (const seg of this.world.route.segments) for (const route of seg.routes) {
-      const pts = route.path.filter((_, k) => k % 2 === 0).map(([i, j]) =>
-        new THREE.Vector3(T.xOf(i), T.H[j * T.nx + i] + 0.5, T.zOf(j)));
+      const pts = route.points.map(([x, y, z]) => new THREE.Vector3(x, y + 0.6, z));
       if (pts.length > 1) this.debug.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
         new THREE.LineBasicMaterial({ color: ROUTE_COLORS[route.index], depthTest: false, transparent: true, opacity: 0.9 })));
     }
     const mk = new THREE.MeshBasicMaterial({ color: '#ff2bd6', depthTest: false });
     const geo = new THREE.SphereGeometry(0.5, 8, 6);
-    for (const r of this.world.route.repairs) {
-      const m = new THREE.Mesh(geo, mk);
-      m.position.set(r.x, r.y + 0.6, r.z);
-      this.debug.add(m);
-    }
-    this.debug.visible = false;
-    this.debug.renderOrder = 10;
+    for (const p of this.world.route.repairs) { const m = new THREE.Mesh(geo, mk); m.position.set(p.x, p.y + 0.6, p.z); this.debug.add(m); }
+    this.debug.visible = false; this.debug.renderOrder = 10;
     this.scene.add(this.debug);
   }
 
@@ -413,7 +439,8 @@ export class WorldView {
     this.time += dt;
     windTime.value += dt;
     // cielo e nebbia sfumano con la quota della camera
-    const env = environmentAt(this.world, camera.position.x, camera.position.z);
+    const env = environmentAt(this.world, orbit ? 5 : camera.position.y);   // dall'orbita: cielo della spiaggia
+    this.clouds.visible = !orbit;
     const top = new THREE.Color(0, 0, 0), bottom = new THREE.Color(0, 0, 0), fog = new THREE.Color(0, 0, 0);
     let far = 0;
     for (const [b, w] of env.weights) {
@@ -447,7 +474,7 @@ export class WorldView {
         this.scene.fog.far = this.scene.fog.far * (1 - k) + 26 * k;
       }
     }
-    for (const c of this.clouds.children) c.position.z += c.userData.drift * dt * 0.8;
+    for (const c of this.clouds.children) { const a = c.userData.drift * dt * 0.0012, x = c.position.x, z = c.position.z; c.position.x = x * Math.cos(a) - z * Math.sin(a); c.position.z = x * Math.sin(a) + z * Math.cos(a); }
     this.sky.position.copy(camera.position);
     for (const f of this.fires) {
       const k = 1 + 0.15 * Math.sin(this.time * 17 + f.light.id) + 0.1 * Math.sin(this.time * 7.3);

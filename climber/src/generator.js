@@ -1,28 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// GENERATORE DELLA MONTAGNA — pipeline in 7 fasi
+// GENERATORE DELLA MONTAGNA — "mucchio di macigni"
 //
-//   seed ─► 1 layout (profilo avanti+salita) ─► 2 rumore
-//        ─► 3 timbri (falò, passaggi = vie alternative, cenge) ─► 4 cottura heightmap
-//        ─► 5 materiali ─► 6 validazione di PIÙ VIE + riparazione ─► 7 oggetti e cibo
+//   seed ─► 1 layout (fasce di bioma, spalle dei falò) ─► 2 NUCLEO a gradoni (heightmap)
+//        ─► 3 MACIGNI: pochi modelli piazzati migliaia di volte sulle pareti del nucleo
+//        ─► 4 campo di distanza (fisica 3D: strapiombi compresi)
+//        ─► 5 cenge = facce dei macigni che guardano in alto ─► 6 vie + riparazioni
+//        ─► 7 mappa delle cime, oggetti, cibo, valigie
 //
-// Il mondo è un corridoio: x laterale, z in avanti, y in alto. Si parte dalla
-// spiaggia (z≈0) e la vetta è in fondo (z = length). Ogni fase usa un RNG
-// separato (rng.fork) così le fasi sono indipendenti.
+// Il nucleo non si vede quasi mai: serve a rendere piena la montagna (niente buchi tra
+// i macigni) e a dare il piano delle spalle dove stanno i falò. La forma che si vede e
+// si scala è quella dei macigni.
 // Il risultato è un oggetto "world" puro (nessuna dipendenza da three.js):
 // lo puoi generare anche in Node (vedi tools/test-gen.mjs).
 // ─────────────────────────────────────────────────────────────────────────────
-import { RNG, hashString, hash2 } from './rng.js';
+import { RNG, hashString } from './rng.js';
 import { Noise3 } from './noise.js';
 import { BIOMES, BIOME_SLOTS } from './biomes.js';
 import { Terrain, FLAG_STAND } from './surface.js';
-import { solveSegment } from './pathfind.js';
-import { MAT, CELL, SEA, STEP, ROUTE_SAFETY, MIN_ROUTES, MAX_ROUTES, ROUTE_SEPARATION, ITEMS } from './rules.js';
+import { buildShapes, shapeDistance } from './boulders.js';
+import { findRoute, RestGraph } from './pathfind.js';
+import { MAT, CELL, SEA, STAND_UP, MIN_ROUTES, MAX_ROUTES, ROUTE_SEPARATION, ITEMS } from './rules.js';
 
-const DEG = Math.PI / 180;
-const TRANSITION = 10;   // metri di sfumatura tra due biomi
-const BUCKET = 10;       // metri per "secchiello" di timbri (accelerazione spaziale)
-const MAX_HW = 74;       // mezza larghezza massima del corridoio
-const MARGIN_X = 26;
+const DEG = Math.PI / 180, TAU = Math.PI * 2;
+const TOP_RADIUS = 7;      // raggio della cima
+const BEACH = 42;          // larghezza della spiaggia attorno al monte
+const GRID = 8;            // lato delle celle dell'indice spaziale dei macigni (m)
+const REACH = 3;           // oltre questa distanza dalla roccia il campo viene troncato
 
 export const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
 export const smoothstep = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -35,113 +38,31 @@ function weighted(rng, weights) {
 }
 
 // ── FASE 1: layout ───────────────────────────────────────────────────────────
-// Il profilo "di base" è una spezzata (z, y): pianori poco inclinati e pareti
-// ripide, bioma dopo bioma. È il motivo per cui si va sempre avanti E in salita.
+// Dal basso: per ogni slot un bioma, alto `height` e inclinato `angle`. Tra un bioma
+// e l'altro una SPALLA piana. Il profilo è una spezzata (raggio, quota).
 function buildLayout(rng) {
-  const sections = [], pts = [];
-  let z = 0, y = 0.5;
-  pts.push([z, y]);
+  const bands = [];
+  let y = 3;
   BIOME_SLOTS.forEach((slot, index) => {
     const id = slot.length === 1 ? slot[0] : rng.pick(slot);
-    const def = BIOMES[id], F = def.face;
+    const def = BIOMES[id], h = rng.range(def.height[0], def.height[1]);
     const last = index === BIOME_SLOTS.length - 1;
-    const startFlat = index === 0 ? def.beach : 6;
-    const endFlat = last ? 14 : 24;           // l'unico vero pianoro: quello del falò
-    const sec = { index, id, def, name: def.name, slot, z0: z, y0: y, cliffs: [] };
-    const floor = (len, slope) => { z += len; y += len * Math.tan(slope * DEG); pts.push([z, y]); return len; };
-    let before = floor(startFlat, index === 0 ? 0.8 : 2);
-    // la PARETE del bioma: salti di roccia finché non si raggiunge l'altezza voluta
-    const target = y + rng.range(F.height[0], F.height[1]);
-    for (let k = 0; y < target - 1; k++) {
-      const Hc = Math.min(rng.range(F.cliff[0], F.cliff[1]), Math.max(F.cliff[0] * 0.7, target - y));
-      const zB = z, yB = y;
-      z += Hc / Math.tan(rng.range(F.angle[0], F.angle[1]) * DEG); y += Hc; pts.push([z, y]);
-      sec.cliffs.push({ index: k, zB, zT: z, yB, yT: y, ledgeBefore: before });
-      if (y < target - 1) before = floor(rng.range(F.ledge[0], F.ledge[1]), rng.range(F.slope[0], F.slope[1]));
-    }
-    floor(endFlat, 1.5);
-    sec.z1 = z; sec.y1 = y;
-    sec.fireZ = z - endFlat * 0.5;
-    // BAIE e SPERONI: gobbe gaussiane che spostano tutta la parete avanti/indietro lungo x.
-    // d > 0 = rientranza (la parete arretra), d < 0 = sperone (sporge).
-    sec.bays = Array.from({ length: rng.int(def.bays[0], def.bays[1]) }, () => ({
-      x: rng.range(-60, 60), w: rng.range(9, 22), d: rng.chance(0.65) ? rng.range(3, 7) : -rng.range(2.5, 5),
-    }));
-    sections.push(sec);
+    bands.push({ index, id, def, name: def.name, slot, y0: y, y1: y + h,
+      run: h / Math.tan(rng.range(def.angle[0], def.angle[1]) * DEG), shoulder: last ? 0 : rng.range(9, 12) });
+    y += h;
   });
-  return { sections, pts, length: z, top: y };
-}
-
-// ── FASE 3: timbri ───────────────────────────────────────────────────────────
-// Tutti i timbri vivono nel sistema "raddrizzato" (x, z') in cui le pareti sono
-// linee dritte; poi lo spostamento shift(x, z) le fa ondulare nel mondo reale.
-class StampSet {
-  constructor() { this.list = []; this.buckets = new Map(); }
-  add(s) {
-    this.list.push(s);
-    for (let k = Math.floor(s.zmin / BUCKET); k <= Math.floor(s.zmax / BUCKET); k++) {
-      if (!this.buckets.has(k)) this.buckets.set(k, []);
-      this.buckets.get(k).push(s);
-    }
-    return s;
+  // i raggi si calcolano dall'alto: cima, parete, spalla, parete, …
+  let r = TOP_RADIUS;
+  for (let k = bands.length - 1; k >= 0; k--) {
+    const b = bands[k];
+    b.r1 = r; b.r0 = r + b.run;
+    r = b.r0 + (k > 0 ? bands[k - 1].shoulder : 0);
   }
-  near(zp) { return this.buckets.get(Math.floor(zp / BUCKET)) || EMPTY; }
-}
-const EMPTY = [];
-
-// Applica i timbri a una quota h nel punto (x, z').
-function applyStamps(stamps, x, zp, h) {
-  for (const s of stamps.near(zp)) {
-    if (x < s.xmin || x > s.xmax || zp < s.zmin || zp > s.zmax) continue;
-    switch (s.kind) {
-      case 'ramp': {
-        // cengia in diagonale: sale lungo x e si appoggia alla parete
-        const t0 = (x - s.x0) / (s.x1 - s.x0);
-        let ry = s.yB + (s.yT - s.yB) * clamp01(s.dir > 0 ? t0 : 1 - t0);
-        ry -= Math.max(0, s.zA - s.w - zp) * 2.5 + Math.max(0, s.x0 - x, x - s.x1) * 2.5;
-        if (ry > h) h = ry;
-        break;
-      }
-      case 'stairs': {
-        // parete a gradoni: pedate piatte (riposo) e alzate ripide
-        const q = clamp01((zp - s.zS) / (s.zB - s.zS)) * s.n;
-        const f = Math.min(Math.floor(q), s.n - 1);
-        let ys = s.yB + ((s.yT - s.yB) * (f + smoothstep(0.7, 1, q - f))) / s.n;
-        ys -= Math.max(0, Math.abs(x - s.xc) - s.hw) * 2.5 + Math.max(0, s.zS - zp) * 2.5;
-        if (ys > h) h = ys;
-        break;
-      }
-      case 'gully': {
-        // canalone: taglia la parete con un piano meno ripido
-        const gy = s.yB + Math.max(0, zp - s.zA) * s.tan + Math.max(0, Math.abs(x - s.xc) - s.hw) * 3;
-        if (gy < h) h = gy;
-        break;
-      }
-      case 'notch': {
-        // cengia/nicchia: spiana la parete alla quota `level` (solo ciò che sta sopra)
-        const d = Math.hypot(x - s.x, zp - s.zp);
-        if (d < s.r && h > s.level) h = s.level + (h - s.level) * smoothstep(s.r * 0.6, s.r, d);
-        break;
-      }
-      case 'flat': {
-        // spianata (falò, vetta)
-        const d = Math.hypot(x - s.x, zp - s.zp);
-        if (d < s.r) h = s.level + (h - s.level) * smoothstep(s.r * 0.65, s.r, d);
-        break;
-      }
-    }
-  }
-  return h;
-}
-
-function stampInfo(stamps, x, zp) {
-  let mat = -1, safe = false;
-  for (const s of stamps.near(zp)) {
-    if (x < s.xmin || x > s.xmax || zp < s.zmin || zp > s.zmax) continue;
-    if (s.safe) safe = true;
-    if (s.kind === 'gully' && Math.abs(x - s.xc) < s.hw + 0.6 && zp > s.zA - 0.5) mat = s.mat;
-  }
-  return { mat, safe };
+  const R0 = bands[0].r0, top = y;
+  const pts = [[0, top], [TOP_RADIUS, top]];
+  for (let k = bands.length - 1; k >= 0; k--) { pts.push([bands[k].r0, bands[k].y0]); if (k > 0) pts.push([bands[k - 1].r1, bands[k - 1].y1]); }
+  pts.push([R0 + BEACH, 0.3], [R0 + BEACH + 30, -5], [R0 + BEACH + 90, -14]);
+  return { bands, sections: bands, pts, top, baseRadius: R0, islandRadius: R0 + BEACH };
 }
 
 // ── contesto di generazione ─────────────────────────────────────────────────
@@ -152,323 +73,282 @@ class Ctx {
     this.root = new RNG(this.seedHash);
     this.layout = buildLayout(this.root.fork('layout'));
     this.N = new Noise3(this.root.fork('noise'));
-    const L = this.layout.length, W = MAX_HW + MARGIN_X;
-    this.T = new Terrain(-W, -45, Math.ceil((2 * W) / CELL) + 1, Math.ceil((L + 85) / CELL) + 1);
-    this.stamps = new StampSet();
-    this.p = { x: 0, y: 0, z: 0, t: 0 };
+    this.shapes = buildShapes();
+    const S = Math.ceil(this.layout.islandRadius + 70);
+    this.S = S;
+    this.core = new Terrain(-S, -S, Math.ceil((2 * S) / CELL) + 1, Math.ceil((2 * S) / CELL) + 1, CELL);
+    this.boulders = [];
+    // indice spaziale 3D: per ogni cella, i macigni che possono toccarla
+    this.gx = Math.ceil((2 * S) / GRID); this.gy = Math.ceil((this.layout.top + 30) / GRID);
+    this.cells = new Array(this.gx * this.gy * this.gx);
+    this.hit = -1;      // ultimo macigno più vicino trovato da sdf() (-1 = nucleo)
   }
 
-  // il corridoio si stringe man mano che si sale, fino alla vetta
-  halfWidth(z) {
-    const L = this.layout.length, t = clamp01(z / L);
-    return Math.min(MAX_HW - 40 * t, 9 + Math.max(0, L - z) * 1.3);
+  // la pianta non è un cerchio: lobi e rientranze attorno al monte
+  lobe(theta) {
+    const c = Math.cos(theta), s = Math.sin(theta), N = this.N;
+    return 1 + 0.17 * N.fbm(c * 1.3 + 4, s * 1.3 + 4, 0.3, 2) + 0.06 * N.fbm(c * 3.7, s * 3.7, 1.7, 2);
   }
-
-  // ondulazione delle pareti: a bassa frequenza (curve) + media (speroni)
-  shift(x, z) {
-    const N = this.N;
-    return 5 * N.fbm(x * 0.012 + 3.1, z * 0.008, 1.7, 2) + 2 * N.fbm(x * 0.05 + 11, z * 0.02, 5.1, 2) + this.bay(x, z);
-  }
-  // Baie/speroni del bioma in cui ci si trova; il passaggio da un bioma all'altro avviene
-  // sul pianoro del falò (che è piatto, quindi non si deforma) in modo graduale: la mappa
-  // z → z' deve restare monotona, altrimenti il terreno si "ripiega".
-  bay(x, z) {
-    const S = this.layout.sections;
-    let out = 0;
-    for (let k = 0; k < S.length; k++) {
-      let w = 1;
-      if (k > 0) w *= smoothstep(S[k - 1].fireZ - 11, S[k - 1].fireZ + 11, z);
-      if (k < S.length - 1) w *= 1 - smoothstep(S[k].fireZ - 11, S[k].fireZ + 11, z);
-      if (w < 1e-4) continue;
-      let d = 0;
-      for (const b of S[k].bays) { const t = (x - b.x) / b.w; d += b.d * Math.exp(-t * t); }
-      out += w * Math.max(-5, Math.min(7, d));
-    }
-    return out;
-  }
-  realZ(x, zp) { let z = zp; for (let k = 0; k < 14; k++) z = zp + this.shift(x, z); return z; }
-
-  profile(zp) {
+  profile(rho) {
     const P = this.layout.pts;
-    this.amp = 1;
-    if (zp <= 0) return P[0][1] + zp * 0.05;           // la spiaggia scende in mare
-    if (zp >= P[P.length - 1][0]) return P[P.length - 1][1];
-    let lo = 0, hi = P.length - 1;
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= zp) lo = m; else hi = m; }
-    const [za, ya] = P[lo], [zb, yb] = P[hi];
-    // sulle cenge (tratti poco pendenti) il rumore viene attenuato: restano percorribili.
-    // Ai bordi torna pieno, così si raccorda con la parete senza gradini.
-    const flat = (yb - ya) / (zb - za) < 0.6;
-    this.amp = flat ? 0.3 + 0.7 * (1 - smoothstep(0, 1.3, Math.min(zp - za, zb - zp))) : 1;
-    return ya + ((yb - ya) * (zp - za)) / (zb - za);
+    if (rho >= P[P.length - 1][0]) return P[P.length - 1][1];
+    let k = 1;
+    while (P[k][0] < rho) k++;
+    const [ra, ya] = P[k - 1], [rb, yb] = P[k];
+    return ya + ((yb - ya) * (rho - ra)) / Math.max(1e-6, rb - ra);
+  }
+  // quota del nucleo
+  coreHeight(x, z) {
+    const r = Math.hypot(x, z), th = Math.atan2(z, x);
+    return this.profile(r / this.lobe(th)) + 0.25 * this.N.fbm(x * 0.08, 0.5, z * 0.08, 2);
+  }
+  bakeCore() {
+    const T = this.core;
+    for (let j = 0; j < T.nz; j++) for (let i = 0; i < T.nx; i++) T.H[j * T.nx + i] = this.coreHeight(T.xOf(i), T.zOf(j));
+    T.computeDerived(0, T.nz - 1);
+  }
+  bandAt(y) {
+    for (const b of this.layout.bands) if (y < b.y1) return b;
+    return this.layout.bands[this.layout.bands.length - 1];
   }
 
-  // Pesi di fusione dei biomi (somma 1), in funzione di z'.
-  weights(zp) {
-    const out = [], S = this.layout.sections, last = S.length - 1;
-    for (const b of S) {
-      let w = 1;
-      if (b.index > 0) w *= smoothstep(b.z0 - TRANSITION / 2, b.z0 + TRANSITION / 2, zp);
-      if (b.index < last) w *= 1 - smoothstep(b.z1 - TRANSITION / 2, b.z1 + TRANSITION / 2, zp);
-      if (w > 1e-4) out.push([b, w]);
+  // ── macigni ────────────────────────────────────────────────────────────────
+  // yaw attorno a y, poi inclinazione `tilt` attorno a un asse orizzontale `ta`
+  addBoulder(shapeId, x, y, z, s, yaw, tilt, ta, kind, band, tag) {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt), ax = Math.cos(ta), az = Math.sin(ta), omc = 1 - ct;
+    // R = Rtilt(asse (ax,0,az)) · Ryaw
+    const t = [ct + ax * ax * omc, -az * st, ax * az * omc, az * st, ct, -ax * st, az * ax * omc, ax * st, ct + az * az * omc];
+    const yw = [cy, 0, sy, 0, 1, 0, -sy, 0, cy];
+    const m = new Float32Array(9);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i * 3 + j] = t[i * 3] * yw[j] + t[i * 3 + 1] * yw[3 + j] + t[i * 3 + 2] * yw[6 + j];
+    const b = { id: this.boulders.length, shape: shapeId, x, y, z, s, m, kind, band, tag };
+    this.boulders.push(b);
+    const rr = s + REACH, G = GRID, S = this.S;
+    const i0 = Math.max(0, Math.floor((x - rr + S) / G)), i1 = Math.min(this.gx - 1, Math.floor((x + rr + S) / G));
+    const j0 = Math.max(0, Math.floor((y - rr + 10) / G)), j1 = Math.min(this.gy - 1, Math.floor((y + rr + 10) / G));
+    const k0 = Math.max(0, Math.floor((z - rr + S) / G)), k1 = Math.min(this.gx - 1, Math.floor((z + rr + S) / G));
+    for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) {
+      const c = (j * this.gx + k) * this.gx + i;
+      (this.cells[c] || (this.cells[c] = [])).push(b.id);
     }
+    return b;
+  }
+
+  // ── FASE 4: campo di distanza. <0 dentro la roccia, >0 fuori, troncato a REACH ──
+  sdf(x, y, z) {
+    const T = this.core, S = this.S;
+    let d = REACH;
+    this.hit = -1;
+    const hc = T.height(x, z);
+    if (hc > -19) {
+      const g = Math.min(6, T.G[T.cell(x, z)]);
+      const dc = (y - hc) / Math.sqrt(1 + g * g);
+      if (dc < d) d = dc;
+    }
+    const i = Math.floor((x + S) / GRID), j = Math.floor((y + 10) / GRID), k = Math.floor((z + S) / GRID);
+    if (i < 0 || j < 0 || k < 0 || i >= this.gx || j >= this.gy || k >= this.gx) return d;
+    const list = this.cells[(j * this.gx + k) * this.gx + i];
+    if (!list) return d;
+    const B = this.boulders, shapes = this.shapes;
+    for (let n = 0; n < list.length; n++) {
+      const b = B[list[n]], dx = x - b.x, dy = y - b.y, dz = z - b.z;
+      if (dx * dx + dy * dy + dz * dz > (b.s + d) * (b.s + d)) continue;
+      const m = b.m, inv = 1 / b.s;   // punto nel sistema del macigno: R^T · (p − c) / s
+      const lx = (m[0] * dx + m[3] * dy + m[6] * dz) * inv, ly = (m[1] * dx + m[4] * dy + m[7] * dz) * inv, lz = (m[2] * dx + m[5] * dy + m[8] * dz) * inv;
+      const dd = shapeDistance(shapes[b.shape], lx, ly, lz) * b.s;
+      if (dd < d) { d = dd; this.hit = b.id; }
+    }
+    return d;
+  }
+  normal(x, y, z, out = [0, 0, 0]) {
+    const e = 0.06;
+    const nx = this.sdf(x + e, y, z) - this.sdf(x - e, y, z), ny = this.sdf(x, y + e, z) - this.sdf(x, y - e, z), nz = this.sdf(x, y, z + e) - this.sdf(x, y, z - e);
+    const l = Math.hypot(nx, ny, nz) || 1;
+    out[0] = nx / l; out[1] = ny / l; out[2] = nz / l;
     return out;
   }
-
-  // ── FASE 4: cottura delle righe [j0, j1] ───────────────────────────────────
-  bakeRows(j0, j1) {
-    const T = this.T, nx = T.nx, p = this.p, L = this.layout.length, N = this.N;
-    j0 = Math.max(0, j0); j1 = Math.min(T.nz - 1, j1);
-    for (let j = j0; j <= j1; j++) {
-      const z = T.zOf(j);
-      const hw = this.halfWidth(z);
-      for (let i = 0; i < nx; i++) {
-        const c = j * nx + i, x = T.xOf(i);
-        const s = this.shift(x, z), zp = z - s;
-        T.SH[c] = s;
-        const base = this.profile(zp), amp = this.amp;
-        p.x = x; p.y = base; p.z = z;
-        let h = base;
-        for (const [b, w] of this.weights(zp)) {
-          p.t = clamp01((zp - b.z0) / (b.z1 - b.z0));
-          h += w * amp * b.def.shape(p, N);
-        }
-        h = applyStamps(this.stamps, x, zp, h);
-        // ai lati il corridoio cade in mare: bordo irregolare (rumore) e fianchi a scarpata
-        const side = x < 0 ? -1 : 1;
-        const d = Math.abs(x) - hw - 9 * N.fbm(z * 0.015 + side * 40, 2.2, x * 0.01, 3);
-        if (d > 0) h -= d * (0.9 + 0.6 * N.perlin(z * 0.03, side * 9.1, 4.4)) + 0.02 * d * d;
-        if (z > L) h -= (z - L) * 1.8;            // dietro la vetta si precipita
-        T.H[c] = Math.max(h, -14);
-      }
-    }
+  // materiale della roccia più vicina al punto
+  materialAt(x, y, z) {
+    this.sdf(x, y, z);
+    if (this.hit >= 0) return this.boulders[this.hit].kind;
+    return MAT[this.bandAt(y).def.topMat];
   }
-
-  // ── FASE 5: materiali (dopo le normali, perché dipendono da "calpestabile") ─
-  paintRows(j0, j1) {
-    const T = this.T, nx = T.nx, p = this.p;
-    j0 = Math.max(0, j0); j1 = Math.min(T.nz - 1, j1);
-    for (let j = j0; j <= j1; j++) {
-      const z = T.zOf(j);
-      for (let i = 0; i < nx; i++) {
-        const c = j * nx + i, x = T.xOf(i), zp = z - T.SH[c];
-        // scelta del bioma con dithering: ai confini le celle si mescolano a "puntini"
-        let best = null, bestV = -1;
-        for (const [b, w] of this.weights(zp)) {
-          const v = w + (hash2(i, j * 7 + b.index, this.seedHash) - 0.5) * 0.6;
-          if (v > bestV) { bestV = v; best = b; }
-        }
-        T.B[c] = best.index;
-        p.x = x; p.y = T.H[c]; p.z = z; p.t = clamp01((zp - best.z0) / (best.z1 - best.z0));
-        const flat = (T.F[c] & FLAG_STAND) !== 0;
-        let m = best.def.material(p, this.N, { flat, up: T.UP[c] });
-        const info = stampInfo(this.stamps, x, zp);
-        if (info.mat >= 0 && !flat) m = info.mat;
-        if (m === MAT.LAVA && info.safe) m = MAT.ROCK;
-        T.M[c] = m;
-      }
+  // scende in verticale da (x, yFrom, z) fino alla prima superficie
+  dropTo(x, yFrom, z, yMin) {
+    let y = yFrom;
+    for (let n = 0; n < 200 && y > yMin; n++) {
+      const d = this.sdf(x, y, z);
+      if (d < 0.04) return y;
+      y -= Math.max(0.04, d);
     }
-  }
-
-  rebuild(j0, j1) {
-    this.bakeRows(j0, j1);
-    this.T.computeDerived(j0 - 1, j1 + 1);
-    this.paintRows(j0 - 1, j1 + 1);
+    return null;
   }
 }
 
-// ── FASE 3a: falò alla fine di ogni bioma + spianata della vetta ────────────
+// ── FASE 3a: falò sulle spalle, vetta, partenza ─────────────────────────────
 function placeCampfires(ctx, rng) {
-  const fires = [];
-  const S = ctx.layout.sections;
-  for (const sec of S.slice(0, -1)) {
-    const x = rng.range(-1, 1) * ctx.halfWidth(sec.fireZ) * 0.35;
-    const level = ctx.profile(sec.fireZ);
-    ctx.stamps.add({ kind: 'flat', tag: 'campfire', x, zp: sec.fireZ, level, r: 8, safe: true,
-      xmin: x - 8, xmax: x + 8, zmin: sec.fireZ - 8, zmax: sec.fireZ + 8 });
-    fires.push({ index: sec.index, x, zp: sec.fireZ, level, section: sec.index });
+  const L = ctx.layout, fires = [];
+  let theta = rng.range(0, TAU);
+  const spawnTheta = theta;
+  for (let k = 0; k < L.bands.length - 1; k++) {
+    theta = (theta + rng.range(-1.6, 1.6) + TAU) % TAU;
+    const rho = (L.bands[k].r1 + L.bands[k + 1].r0) / 2, r = rho * ctx.lobe(theta);
+    fires.push({ index: k, theta, x: Math.cos(theta) * r, z: Math.sin(theta) * r, y: L.bands[k].y1, band: k });
   }
-  const last = S[S.length - 1];
-  const zp = last.z1 - 7, level = ctx.profile(zp) + 1;
-  ctx.stamps.add({ kind: 'flat', tag: 'peak', x: 0, zp, level, r: 6, safe: true, xmin: -6, xmax: 6, zmin: zp - 6, zmax: zp + 6 });
-  return { fires, peak: { x: 0, zp, level } };
+  const peak = { x: 0, z: 0, y: L.top };
+  const rs = (L.baseRadius + 16) * ctx.lobe(spawnTheta);
+  const spawn = { x: Math.cos(spawnTheta) * rs, z: Math.sin(spawnTheta) * rs, theta: spawnTheta };
+  return { fires, peak, spawn };
 }
 
-// ── FASE 3b: passaggi (vie alternative) e cenge naturali su ogni parete ─────
-function placePassages(ctx, rng) {
-  const passages = [];
-  let notches = 0, coves = 0;
-  for (const sec of ctx.layout.sections) {
-    const def = sec.def;
-    for (const c of sec.cliffs) {
-      const H = c.yT - c.yB, hw = ctx.halfWidth((c.zB + c.zT) / 2) - 14;
-      const n = rng.int(def.passages.count[0], def.passages.count[1]);
-      const xs = [];
-      for (let t = 0; t < 40 && xs.length < n; t++) {
-        const x = rng.range(-hw, hw);
-        if (xs.every(o => Math.abs(o - x) > 26)) xs.push(x);
-      }
-      // tipi DIVERSI sulla stessa parete: così le vie alternative hanno carattere diverso
-      const pool = { ...def.passages.weights };
-      for (const x of xs) {
-        const type = Object.keys(pool).length ? weighted(rng, pool) : weighted(rng, def.passages.weights);
-        delete pool[type];
-        const e = H / 2.5 + 1; // margine del bordo dei timbri che si alzano
-        if (type === 'ramp') {
-          const len = Math.min(48, H / Math.tan(rng.range(18, 28) * DEG));
-          const dir = rng.chance(0.5) ? 1 : -1, w = rng.range(2.2, 3.2);
-          ctx.stamps.add({ kind: 'ramp', x0: x - len / 2, x1: x + len / 2, dir, zA: c.zB, zB: c.zT, w, yB: c.yB, yT: c.yT, safe: true,
-            xmin: x - len / 2 - e, xmax: x + len / 2 + e, zmin: c.zB - w - e, zmax: c.zT + 0.5 });
-        } else if (type === 'stairs') {
-          // i gradoni sporgono davanti alla base, ma non oltre la cengia sottostante
-          const k = Math.max(2, Math.round(H / rng.range(3.2, 4.5))), hwS = rng.range(2.5, 4.5);
-          const zS = c.zB - Math.min(k * 1.5, Math.max(1.5, c.ledgeBefore - 1));
-          ctx.stamps.add({ kind: 'stairs', xc: x, hw: hwS, zS, zB: c.zT, yB: c.yB, yT: c.yT, n: k, safe: true,
-            xmin: x - hwS - e, xmax: x + hwS + e, zmin: zS - e, zmax: c.zT + 0.5 });
-        } else {
-          const tan = Math.tan(rng.range(50, 58) * DEG), hwG = rng.range(1.6, 2.8), zEnd = c.zB + H / tan + 1;
-          ctx.stamps.add({ kind: 'gully', xc: x, hw: hwG, zA: c.zB, zEnd, yB: c.yB, yT: c.yT, tan, mat: def.gullyMat,
-            xmin: x - hwG - H / 3 - 1, xmax: x + hwG + H / 3 + 1, zmin: c.zB - 1, zmax: zEnd });
-        }
-        passages.push({ section: sec.index, cliff: c.index, type, x, zp: (c.zB + c.zT) / 2, y: (c.yB + c.yT) / 2 });
-      }
-      // RIPARI alla base: rientranze scavate nel piede della parete (ci si riposa al coperto)
-      const nCoves = Math.round(2 * (hw + 14) * (def.coves || 0) * rng.range(0.6, 1.4));
-      for (let k = 0; k < nCoves; k++) {
-        const x = rng.range(-hw - 10, hw + 10), r = rng.range(3, 5.5), zp = c.zB + r * 0.45;
-        ctx.stamps.add({ kind: 'notch', tag: 'cove', x, zp, level: c.yB + 0.25, r, xmin: x - r, xmax: x + r, zmin: zp - r, zmax: zp + r });
-        coves++;
-      }
-      // cenge naturali sparse sulla parete (punti di riposo)
-      const count = Math.round(2 * (hw + 14) * H * def.notches);
-      for (let k = 0; k < count; k++) {
-        const x = rng.range(-hw - 14, hw + 14), f = rng.range(0.15, 0.85), r = rng.range(2.0, 3.2);
-        const zp = c.zB + f * (c.zT - c.zB);
-        ctx.stamps.add({ kind: 'notch', x, zp, level: c.yB + f * H, r, xmin: x - r, xmax: x + r, zmin: zp - r, zmax: zp + r });
-        notches++;
-      }
+// ── FASE 3b: macigni sulle pareti ───────────────────────────────────────────
+function placeBoulders(ctx, rng, fires) {
+  const L = ctx.layout;
+  const SLABS = [4, 5], ANY = [0, 1, 2, 3, 4, 5, 6, 7];
+  for (const b of L.bands) {
+    const B = b.def.boulder, sAvg = (B.size[0] + B.size[1]) / 2;
+    const area = TAU * ((b.r0 + b.r1) / 2) * Math.hypot(b.y1 - b.y0, b.run);
+    const n = Math.round((B.density * area) / (1.25 * sAvg * sAvg));
+    for (let k = 0; k < n; k++) {
+      const theta = rng.range(0, TAU), t = rng.range(-0.04, 1.0), s = rng.range(B.size[0], B.size[1]) * (1 - 0.25 * t * (b.index === L.bands.length - 1 ? 1 : 0));
+      const y = b.y0 + t * (b.y1 - b.y0), r = (b.r0 + (b.r1 - b.r0) * t) * ctx.lobe(theta) + s * rng.range(-0.05, 0.3);
+      const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
+      // niente macigni addosso ai falò
+      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 6 && Math.abs(f.y - y) < s + 5)) continue;
+      const flat = rng.chance(B.flat);
+      const sp = b.def.special, u = rng.next();
+      const kind = u < (sp.ice || 0) ? MAT.ICE : u < (sp.ice || 0) + (sp.vine || 0) ? MAT.VINE : u < (sp.ice || 0) + (sp.vine || 0) + (sp.lava || 0) ? MAT.LAVA : MAT.ROCK;
+      ctx.addBoulder(flat && rng.chance(0.5) ? rng.pick(SLABS) : rng.pick(ANY), x, y, z, s, rng.range(0, TAU),
+        (flat ? rng.range(0, 5) : rng.range(6, B.tilt)) * DEG, rng.range(0, TAU), kind, b.index, 'wall');
     }
   }
-  return { passages, notches, coves };
+  // qualche masso sparso sulla spiaggia
+  for (let k = 0; k < 70; k++) {
+    const theta = rng.range(0, TAU), r = rng.range(L.baseRadius + 3, L.islandRadius - 8) * ctx.lobe(theta), s = rng.range(1.2, 3.2);
+    const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
+    ctx.addBoulder(rng.pick(ANY), x, ctx.coreHeight(x, z) + s * 0.15, z, s, rng.range(0, TAU), rng.range(0, 20) * DEG, rng.range(0, TAU), MAT.ROCK, 0, 'beach');
+  }
 }
 
-// ── FASE 6: validazione di PIÙ VIE e riparazione ─────────────────────────────
-// Per ogni tratto (falò → falò) cerchiamo la via 1. Poi "vietiamo" un corridoio
-// largo ROUTE_SEPARATION attorno a lei e cerchiamo la via 2, e così via.
-// Se le vie trovate sono meno di MIN_ROUTES, il riparatore scava cenge DENTRO
-// la zona ancora libera: così crea una via nuova e diversa, non rinforza la vecchia.
-function cellsNear(T, x, z, r, pred = () => true) {
-  const out = [];
-  const i0 = T.colOf(x - r), i1 = T.colOf(x + r), j0 = T.rowOf(z - r), j1 = T.rowOf(z + r);
-  for (let j = Math.max(0, j0); j <= Math.min(T.nz - 1, j1); j++)
-    for (let i = Math.max(0, i0); i <= Math.min(T.nx - 1, i1); i++)
-      if (Math.hypot(T.xOf(i) - x, T.zOf(j) - z) <= r && pred(i, j)) out.push([i, j]);
-  return out;
-}
-
-// Vietiamo solo i tratti in cui la via SUPERA UNA PARETE (zona della parete in z'):
-// i pianori si possono condividere, ma ogni parete va salita in un punto diverso.
-function markCorridor(T, mask, path, radius, keepFree, cliffZones) {
-  const rc = Math.ceil(radius / T.C);
-  for (let k = 0; k < path.length; k += 2) {
-    const [pi, pj] = path[k];
-    const pc = pj * T.nx + pi;
-    const zp = T.zOf(pj) - T.SH[pc];
-    if (!cliffZones.some(([a, b]) => zp >= a && zp <= b)) continue;
-    // conta solo dove la via SALE davvero (arrampicata o rampa), non dove cammina lungo la base
-    const [qi, qj] = path[Math.min(path.length - 1, k + 1)];
-    const climbing = !(T.F[pc] & FLAG_STAND) ||
-      (T.H[qj * T.nx + qi] - T.H[pc]) / (T.C * Math.max(1, Math.hypot(qi - pi, qj - pj))) > 0.28;
-    if (!climbing) continue;
-    for (let dj = -rc; dj <= rc; dj++) for (let di = -rc; di <= rc; di++) {
-      if (di * di + dj * dj > rc * rc) continue;
-      const i = pi + di, j = pj + dj;
-      if (!T.inside(i, j)) continue;
-      const x = T.xOf(i), z = T.zOf(j), c = j * T.nx + i, czp = z - T.SH[c];
-      if (keepFree.some(p => Math.hypot(x - p.x, z - p.z) < p.r)) continue;
-      // si vieta solo la fascia della parete, non i pianori: si può sempre attraversare di lato
-      if (!cliffZones.some(([a, b, ca, cb]) => czp >= ca && czp <= cb)) continue;
-      mask[c] = 1;
+// ── FASE 5: cenge. Ogni faccia di macigno che guarda in alto ed è libera sopra ──
+function collectRests(ctx, top, fires, peak, spawn) {
+  const nodes = [], shapes = ctx.shapes;
+  const free = (x, y, z) => ctx.sdf(x, y + 0.95, z) > 0.42 && ctx.sdf(x, y + 1.6, z) > 0.3;
+  const addBoulderRests = b => {
+    if (b.kind === MAT.LAVA) return;
+    const m = b.m;
+    for (const f of shapes[b.shape].faces) {
+      const ny = m[3] * f.n[0] + m[4] * f.n[1] + m[5] * f.n[2];
+      if (ny < 0.8 || f.area * b.s * b.s < 2.2) continue;
+      const c = f.center;
+      const x = b.x + b.s * (m[0] * c[0] + m[1] * c[1] + m[2] * c[2]), y = b.y + b.s * (m[3] * c[0] + m[4] * c[1] + m[5] * c[2]), z = b.z + b.s * (m[6] * c[0] + m[7] * c[1] + m[8] * c[2]);
+      if (y < SEA + 0.5 || !free(x, y, z)) continue;
+      nodes.push({ x, y, z, kind: b.kind, b: b.id, r: Math.min(4, 0.75 * Math.sqrt((f.area * b.s * b.s) / Math.PI)) });
     }
+  };
+  ctx.boulders.forEach(addBoulderRests);
+  // tutte le superfici calpestabili VISIBILI DALL'ALTO (dalla mappa delle cime), un nodo ogni 2 m:
+  // cime e falde dei macigni, spiaggia, spalle. Le facce qui sopra aggiungono quelle sotto uno strapiombo.
+  for (let j = 1; j < top.nz - 1; j++) for (let i = 1; i < top.nx - 1; i++) {
+    const c = j * top.nx + i, onCore = top.G[c] === 0, step = onCore ? 4 : 2;   // sui piani larghi bastano meno nodi
+    if (i % step || j % step) continue;
+    if (!(top.F[c] & FLAG_STAND) || top.UP[c] < 0.72 || top.H[c] < SEA + 0.6 || top.M[c] === MAT.LAVA) continue;
+    const x = top.xOf(i), z = top.zOf(j);
+    if (free(x, top.H[c], z)) nodes.push({ x, y: top.H[c], z, kind: top.M[c], b: -1, r: onCore ? 2.2 : 1.1 });
   }
+  const special = p => { nodes.push({ x: p.x, y: p.y, z: p.z, kind: MAT.ROCK, b: -1, r: 2, fixed: true }); return nodes.length - 1; };
+  spawn.node = special(spawn);
+  for (const f of fires) f.node = special(f);
+  peak.node = special(peak);
+  return { nodes, addBoulderRests };
 }
 
-function classifyRoute(T, path, index) {
-  let walk = 0, climb = 0, vine = 0, ice = 0, sx = 0, maxY = -Infinity, climbGain = 0;
-  for (let k = 1; k < path.length; k++) {
-    const [ai, aj] = path[k - 1], [bi, bj] = path[k];
-    const a = aj * T.nx + ai, b = bj * T.nx + bi;
-    const dxz = T.C * Math.hypot(bi - ai, bj - aj), dh = T.H[b] - T.H[a];
-    const d = Math.hypot(dxz, dh);
-    if ((T.F[b] & FLAG_STAND) && dh <= STEP) walk += d;
-    else { climb += d; climbGain += Math.max(0, dh); if (T.M[b] === MAT.VINE) vine += d; if (T.M[b] === MAT.ICE) ice += d; }
-    sx += T.xOf(bi); maxY = Math.max(maxY, T.H[b]);
-  }
-  // quanta parte del dislivello si guadagna arrampicando (il resto camminando su cenge/rampe)
-  const [si, sj] = path[0], [ei, ej] = path[path.length - 1];
-  const gain = Math.max(1, T.H[ej * T.nx + ei] - T.H[sj * T.nx + si]);
-  const frac = Math.min(1, climbGain / gain), mx = sx / Math.max(1, path.length - 1);
-  const kind = frac < 0.3 ? 'sentiero' : frac < 0.65 ? 'misto' : 'parete';
-  const side = mx < -12 ? 'sinistra' : mx > 12 ? 'destra' : 'centro';
-  return { index, path, walk, climb, vine, ice, climbFrac: frac, meanX: mx, kind, side, label: String.fromCharCode(65 + index) };
-}
-
-function validateRoutes(ctx, fires, peak) {
-  const T = ctx.T, segments = [], repairs = [];
-  const mask = new Uint8Array(T.nx * T.nz);
-  // zone delle pareti (in z'), allargate per includere rampe e gradoni davanti alla base
-  // [a, b] = dove la via "usa" la parete (include gradoni e rampe davanti alla base)
-  // [ca, cb] = celle effettivamente vietate: solo la fascia della parete, il pianoro resta libero
-  const cliffZones = ctx.layout.sections.flatMap(sec => sec.cliffs.map(c => [c.zB - Math.min(8, c.ledgeBefore), c.zT + 1, c.zB + 0.2, c.zT - 0.2]));
-  let start = { x: 0, z: 6 };
-  let startCells = cellsNear(T, 0, 6, 14, (i, j) => T.F[j * T.nx + i] & FLAG_STAND);
-
-  const goals = fires.map(f => ({ x: f.x, z: f.z, y: f.y, r: 5 })).concat([{ x: peak.x, z: peak.z, y: peak.y, r: 5 }]);
-  goals.forEach((goal, k) => {
-    const isGoal = (i, j) => (T.F[j * T.nx + i] & FLAG_STAND) && Math.hypot(T.xOf(i) - goal.x, T.zOf(j) - goal.z) <= goal.r;
-    const j0 = Math.max(0, T.rowOf(Math.min(start.z, goal.z) - 30));
-    const j1 = Math.min(T.nz - 1, T.rowOf(Math.max(start.z, goal.z) + 25));
-    mask.fill(0, j0 * T.nx, (j1 + 1) * T.nx);
-    // vicino ai falò le vie convergono (come in PEAK); verso la vetta ancora di più
-    const keepFree = [{ ...start, r: 18 }, { ...goal, r: k === goals.length - 1 ? 32 : 18 }];
-    const routes = [];
+// ── FASE 6: vie. Più vie per tappa; se mancano, si aggiunge un APPOGGIO (una lastra) ──
+function validateRoutes(ctx, rests, fires, peak, spawn) {
+  const graph = new RestGraph(rests.nodes, (x, y, z) => ctx.sdf(x, y, z));
+  const stops = [spawn, ...fires, peak], segments = [], repairs = [];
+  for (let k = 0; k < stops.length - 1; k++) {
+    const from = stops[k], to = stops[k + 1], routes = [];
+    const blocked = new Set();
     let segRepairs = 0;
-
     for (let r = 0; r < MAX_ROUTES; r++) {
-      const tried = [];
       let res;
-      for (let iter = 0; iter < 140; iter++) {
-        res = solveSegment(T, { startCells, isGoal, target: goal, j0, j1, budget: ROUTE_SAFETY, blocked: r > 0 ? mask : null });
-        if (res.ok || r >= MIN_ROUTES) break;            // le vie "extra" non si riparano: o ci sono o no
-        const pick = res.candidates.find(([ci, cj]) => !tried.some(([ti, tj]) => Math.hypot(ci - ti, cj - tj) * T.C < 2.5));
-        if (!pick || tried.length >= 120) break;
-        tried.push(pick);
-        // RIPARAZIONE: una cengia appena sopra la cella raggiunta più vicina al traguardo
-        const [ci, cj] = pick, c = cj * T.nx + ci, x = T.xOf(ci), z = T.zOf(cj);
-        const [gx, gz] = T.gradient(x, z), gl = Math.hypot(gx, gz) || 1;
-        const cx = x + (gx / gl) * 1.2, cz = z + (gz / gl) * 1.2, zp = cz - T.SH[c];
-        // raggio ≥ 4 celle: una cella è "piana" solo se lo sono anche le vicine
-        ctx.stamps.add({ kind: 'notch', tag: 'repair', x: cx, zp, level: T.H[c], r: 2.6, safe: true,
-          xmin: cx - 2.6, xmax: cx + 2.6, zmin: zp - 2.6, zmax: zp + 2.6 });
-        ctx.rebuild(T.rowOf(cz) - 5, T.rowOf(cz) + 5);
-        repairs.push({ segment: k, route: r, x: cx, z: cz, y: T.H[c] });
+      for (let iter = 0; iter < 60; iter++) {
+        res = findRoute(graph, from.node, to.node, blocked);
+        if (res.path || r >= MIN_ROUTES) break;
+        // RIPARAZIONE: una lastra piana a portata di braccio dal punto raggiunto più vicino al traguardo
+        const a = graph.nodes[res.closest];
+        const dx = to.x - a.x, dy = to.y - a.y, dz = to.z - a.z, dl = Math.hypot(dx, dy, dz) || 1;
+        let qx = a.x + (dx / dl) * 3.4, qy = a.y + Math.max(1.2, (dy / dl) * 3.4), qz = a.z + (dz / dl) * 3.4;
+        const n = [0, 0, 0];
+        for (let it = 0; it < 6; it++) {           // porta il punto sulla superficie
+          const d = ctx.sdf(qx, qy, qz); ctx.normal(qx, qy, qz, n);
+          qx -= n[0] * d; qz -= n[2] * d;
+        }
+        const hl = Math.hypot(n[0], n[2]) || 1, s = 2.3, shape = ctx.shapes[5];
+        const topFace = shape.faces.reduce((p, f) => (f.n[1] > p.n[1] ? f : p));
+        const b = ctx.addBoulder(5, qx + (n[0] / hl) * 0.9, qy - topFace.center[1] * s, qz + (n[2] / hl) * 0.9, s, ctx.root.fork('rep' + repairs.length).range(0, TAU), 0, 0, MAT.ROCK, ctx.bandAt(qy).index, 'repair');
+        const before = graph.nodes.length;
+        rests.addBoulderRests(b);
+        if (graph.nodes.length === before) graph.nodes.push({ x: b.x, y: qy, z: b.z, kind: MAT.ROCK, b: b.id, r: 1.2 });   // appoggio comunque valido
+        graph.refresh(before);
+        repairs.push({ segment: k, route: r, x: b.x, y: qy, z: b.z });
         segRepairs++;
       }
-      if (!res.ok) break;
-      routes.push(classifyRoute(T, res.path, r));
-      markCorridor(T, mask, res.path, ROUTE_SEPARATION, keepFree, cliffZones);
+      if (!res.path) break;
+      routes.push(describeRoute(graph, res, r));
+      // la via successiva non può usare gli appoggi di questa (tranne vicino ai falò)
+      for (const i of res.path) {
+        const p = graph.nodes[i];
+        if (p.fixed) continue;
+        for (const j of graph.near(p.x, p.y, p.z, ROUTE_SEPARATION)) {
+          const q = graph.nodes[j];
+          if (q.fixed || Math.hypot(q.x - from.x, q.y - from.y, q.z - from.z) < 16 || Math.hypot(q.x - to.x, q.y - to.y, q.z - to.z) < (k === stops.length - 2 ? 26 : 16)) continue;
+          blocked.add(j);
+        }
+      }
     }
-    segments.push({ index: k, ok: routes.length >= MIN_ROUTES, routes, repairs: segRepairs, from: start, to: goal });
-    start = goal;
-    startCells = cellsNear(T, goal.x, goal.z, 6, (i, j) => T.F[j * T.nx + i] & FLAG_STAND);
-  });
-  return { segments, repairs };
+    segments.push({ index: k, ok: routes.length >= MIN_ROUTES, routes, repairs: segRepairs, from, to });
+  }
+  return { segments, repairs, graph };
 }
 
-// ── FASE 7: oggetti ─────────────────────────────────────────────────────────
-// Prova `tries` posizioni casuali; tiene solo quelle che rispettano le regole
-// (bioma giusto, terreno piano, distanza minima dagli altri). È "dart throwing",
-// la versione semplice del Poisson-disc sampling.
+function describeRoute(graph, res, index) {
+  const pts = res.path.map(i => graph.nodes[i]);
+  let walk = 0, climb = 0, climbGain = 0, vine = 0, ice = 0;
+  for (let k = 1; k < pts.length; k++) {
+    const a = pts[k - 1], b = pts[k], d = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    if (res.types[k - 1] === 'climb') { climb += d; climbGain += Math.max(0, b.y - a.y); if (b.kind === MAT.VINE) vine += d; if (b.kind === MAT.ICE) ice += d; }
+    else walk += d;
+  }
+  const gain = Math.max(1, pts[pts.length - 1].y - pts[0].y), frac = Math.min(1, climbGain / gain);
+  return { index, label: String.fromCharCode(65 + index), points: pts.map(p => [p.x, p.y, p.z]), nodes: res.path,
+    walk, climb, vine, ice, climbFrac: frac, hops: pts.length, kind: frac < 0.45 ? 'facile' : frac < 0.8 ? 'misto' : 'parete' };
+}
+
+// ── FASE 7a: mappa delle cime. Per ogni cella, la superficie più alta (per erba, oggetti, mappa) ──
+function bakeTop(ctx, T = null, x0 = -1e9, x1 = 1e9, z0 = -1e9, z1 = 1e9) {
+  const C = ctx.core, n = [0, 0, 0];
+  if (!T) T = new Terrain(C.x0, C.z0, C.nx, C.nz, C.C);
+  const lim = ctx.layout.islandRadius + 4;
+  const ia = Math.max(0, T.colOf(x0)), ib = Math.min(T.nx - 1, T.colOf(x1)), ja = Math.max(0, T.rowOf(z0)), jb = Math.min(T.nz - 1, T.rowOf(z1));
+  for (let j = ja; j <= jb; j++) for (let i = ia; i <= ib; i++) {
+    const c = j * T.nx + i, x = T.xOf(i), z = T.zOf(j), hc = C.H[c];
+    let y = hc, up = C.UP[c], id = -1;
+    if (Math.hypot(x, z) < lim) {
+      const top = ctx.dropTo(x, Math.min(ctx.layout.top + 9, hc + 34), z, hc - 0.5);
+      if (top !== null && top > hc + 0.08) { y = top; id = ctx.hit; up = ctx.normal(x, y, z, n)[1]; }
+    }
+    T.H[c] = y; T.UP[c] = up; T.G[c] = id >= 0 ? 1 : 0;   // G = 1 se la cima è un macigno, 0 se è il nucleo
+    const band = id >= 0 ? ctx.boulders[id].band : ctx.bandAt(y - 0.5).index;
+    T.B[c] = band;
+    T.M[c] = id >= 0 ? ctx.boulders[id].kind : MAT[ctx.layout.bands[band].def.topMat];
+    T.F[c] = up >= STAND_UP && y > SEA + 0.15 ? FLAG_STAND : 0;
+  }
+  return T;
+}
+
+// ── FASE 7b: oggetti ─────────────────────────────────────────────────────────
 class SpatialHash {
   constructor(size) { this.size = size; this.map = new Map(); }
   add(o) {
@@ -490,21 +370,27 @@ class SpatialHash {
   }
 }
 
-function scatterProps(ctx, rng, fires) {
-  const T = ctx.T, hash = new SpatialHash(4), props = [];
-  for (const f of fires) hash.add({ x: f.x, y: f.y, z: f.z, spacing: 6 });
-  for (const sec of ctx.layout.sections) {
-    for (const rule of sec.def.props || []) {
+// Posto adatto a un oggetto: cima piana, libera sopra, non lava.
+function flatSpot(ctx, top, x, z, minUp = 0.86) {
+  const c = top.cell(x, z);
+  if (!(top.F[c] & FLAG_STAND) || top.UP[c] < minUp || top.M[c] === MAT.LAVA || top.H[c] < SEA + 0.6) return null;
+  const y = ctx.dropTo(x, top.H[c] + 1.2, z, top.H[c] - 1);
+  if (y === null || ctx.sdf(x, y + 1.3, z) < 0.5) return null;
+  return { y, band: top.B[c] };
+}
+
+function scatterProps(ctx, rng, top, fires) {
+  const hash = new SpatialHash(4), props = [], L = ctx.layout;
+  for (const f of fires) hash.add({ x: f.x, y: f.y, z: f.z, spacing: 5 });
+  for (const b of L.bands) {
+    const rMax = (b.index === 0 ? L.islandRadius - 6 : b.r0 + 6) * 1.25, rMin = Math.max(0, b.r1 - 14);
+    for (const rule of b.def.props || []) {
       for (let t = 0; t < rule.tries; t++) {
-        const zp = rng.range(sec.z0, sec.z1), x = rng.range(-1, 1) * ctx.halfWidth(zp);
-        const z = zp + ctx.shift(x, zp);
-        const c = T.cell(x, z);
-        if (T.B[c] !== sec.index || !(T.F[c] & FLAG_STAND) || T.H[c] < SEA + 0.6) continue;
-        if (T.upNormal(x, z) < 0.8) continue;
-        const y = T.height(x, z);
-        if (!hash.free(x, y, z, rule.spacing)) continue;
-        const prop = { type: rule.type, x, y, z, yaw: rng.range(0, Math.PI * 2),
-          scale: rng.range(rule.scale[0], rule.scale[1]), spacing: rule.spacing * 0.5 };
+        const th = rng.range(0, TAU), r = Math.sqrt(rng.range(rMin * rMin, rMax * rMax));
+        const x = Math.cos(th) * r, z = Math.sin(th) * r;
+        const spot = flatSpot(ctx, top, x, z);
+        if (!spot || spot.band !== b.index || !hash.free(x, spot.y, z, rule.spacing)) continue;
+        const prop = { type: rule.type, x, y: spot.y, z, yaw: rng.range(0, TAU), scale: rng.range(rule.scale[0], rule.scale[1]), spacing: rule.spacing * 0.5 };
         hash.add(prop); props.push(prop);
       }
     }
@@ -512,51 +398,32 @@ function scatterProps(ctx, rng, fires) {
   return { props, hash };
 }
 
-// Il cibo va lungo le vie validate: chi segue una via "giusta" lo trova.
-function placeFood(ctx, rng, segments, hash) {
-  const T = ctx.T, food = [];
-  for (const seg of segments) for (const route of seg.routes) {
-    const rests = route.path.filter(([i, j]) => T.F[j * T.nx + i] & FLAG_STAND);
-    for (const f of [0.35, 0.7]) {
-      if (rests.length < 20) break;
-      const [i, j] = rests[Math.floor(f * rests.length)];
-      const x = T.xOf(i) + rng.range(-0.3, 0.3), z = T.zOf(j) + rng.range(-0.3, 0.3);
-      const y = T.height(x, z) + 0.45;
-      if (!hash.free(x, y, z, 3)) continue;
-      const item = { type: 'food', x, y, z, taken: false };
-      hash.add(item); food.push(item);
-    }
-  }
-  return food;
-}
-
-// Valigie con un oggetto: due vicino a ogni falò, una lungo ogni via.
-function placeLuggage(ctx, rng, fires, segments, hash) {
-  const T = ctx.T, out = [];
+// Cibo e valigie sugli appoggi delle vie (chi segue una via li trova) e vicino ai falò.
+function placeLoot(ctx, rng, top, fires, segments, hash) {
+  const food = [], luggage = [];
   const weights = Object.fromEntries(Object.entries(ITEMS).map(([k, v]) => [k, v.weight]));
-  const add = (x, z) => {
-    const c = T.cell(x, z);
-    if (!(T.F[c] & FLAG_STAND) || T.upNormal(x, z) < 0.85) return false;
-    const y = T.height(x, z);
-    if (!hash.free(x, y, z, 2.5)) return false;
-    const bag = { x, y, z, yaw: rng.range(0, Math.PI * 2), item: weighted(rng, weights), opened: false, spacing: 2.5 };
-    hash.add(bag); out.push(bag);
+  const tryAt = (x, z, list, make, spacing) => {
+    const spot = flatSpot(ctx, top, x, z, 0.8);
+    if (!spot || !hash.free(x, spot.y, z, spacing)) return false;
+    const o = make(spot.y); o.spacing = spacing; hash.add(o); list.push(o);
     return true;
   };
   for (const f of fires) {
-    for (let k = 0, placed = 0; k < 12 && placed < 2; k++) {
-      const a = rng.range(0, Math.PI * 2), r = rng.range(3.5, 6.5);
-      if (add(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r)) placed++;
+    for (let k = 0, placed = 0; k < 14 && placed < 2; k++) {
+      const a = rng.range(0, TAU), r = rng.range(3, 5.5);
+      if (tryAt(f.x + Math.cos(a) * r, f.z + Math.sin(a) * r, luggage, y => ({ x: f.x + Math.cos(a) * r, y, z: f.z + Math.sin(a) * r, yaw: rng.range(0, TAU), item: weighted(rng, weights), opened: false }), 2.2)) placed++;
     }
   }
   for (const seg of segments) for (const route of seg.routes) {
-    const rests = route.path.filter(([i, j]) => T.F[j * T.nx + i] & FLAG_STAND);
-    for (let k = 0; k < 6 && rests.length > 30; k++) {
-      const [i, j] = rests[Math.floor(rng.range(0.4, 0.65) * rests.length)];
-      if (add(T.xOf(i) + rng.range(-0.8, 0.8), T.zOf(j) + rng.range(-0.8, 0.8))) break;
-    }
+    const P = route.points;
+    [[0.35, food], [0.7, food], [0.52, luggage]].forEach(([f, list]) => {
+      const [x, , z] = P[Math.min(P.length - 2, Math.max(1, Math.floor(f * P.length)))];
+      const ox = x + rng.range(-0.5, 0.5), oz = z + rng.range(-0.5, 0.5);
+      if (list === food) tryAt(ox, oz, food, y => ({ type: 'food', x: ox, y: y + 0.45, z: oz, taken: false }), 2.5);
+      else tryAt(ox, oz, luggage, y => ({ x: ox, y, z: oz, yaw: rng.range(0, TAU), item: weighted(rng, weights), opened: false }), 2.2);
+    });
   }
-  return out;
+  return { food, luggage };
 }
 
 // ── PIPELINE COMPLETA ───────────────────────────────────────────────────────
@@ -567,65 +434,66 @@ export function generateMountain(seed) {
   const lap = name => { const n = now(); timings[name] = Math.round(n - t); t = n; };
 
   const ctx = new Ctx(String(seed));
-  const T = ctx.T;
-  lap('layout+rumore');
+  ctx.bakeCore();
+  lap('nucleo');
 
-  const { fires, peak } = placeCampfires(ctx, ctx.root.fork('campfires'));
-  const { passages, notches, coves } = placePassages(ctx, ctx.root.fork('features'));
-  lap('timbri');
+  const { fires, peak, spawn } = placeCampfires(ctx, ctx.root.fork('campfires'));
+  placeBoulders(ctx, ctx.root.fork('boulders'), fires);
+  spawn.y = ctx.coreHeight(spawn.x, spawn.z);
+  lap('macigni');
 
-  ctx.bakeRows(0, T.nz - 1);
-  lap('cottura');
-  T.computeDerived(0, T.nz - 1);
-  ctx.paintRows(0, T.nz - 1);
-  lap('materiali');
-
-  // posizioni reali (dopo l'ondulazione) di falò e vetta
-  for (const f of [...fires, peak]) {
-    f.z = ctx.realZ(f.x, f.zp);
-    f.y = T.height(f.x, f.z);
-  }
-  for (const p of passages) p.z = ctx.realZ(p.x, p.zp);
-  const route = validateRoutes(ctx, fires, peak);
-  lap('validazione');
+  const top = bakeTop(ctx);
+  lap('mappa cime');
+  const rests = collectRests(ctx, top, fires, peak, spawn);
+  lap('cenge');
+  const route = validateRoutes(ctx, rests, fires, peak, spawn);
+  for (const b of ctx.boulders) if (b.tag === 'repair') bakeTop(ctx, top, b.x - b.s, b.x + b.s, b.z - b.s, b.z + b.s);
+  lap('vie');
 
   for (const f of [...fires, peak]) {
-    f.y = T.height(f.x, f.z);
     f.pos = { x: f.x, y: f.y, z: f.z };
-    const sx = f.x + 2.6, sz = f.z - 1.2;
-    f.spawn = { x: sx, y: T.height(sx, sz), z: sz };
+    f.spawn = { x: f.x + 2.4, y: f.y, z: f.z - 1.2 };
   }
-  const { props, hash } = scatterProps(ctx, ctx.root.fork('props'), fires);
-  const food = placeFood(ctx, ctx.root.fork('food'), route.segments, hash);
-  const luggage = placeLuggage(ctx, ctx.root.fork('luggage'), fires, route.segments, hash);
+  const { props, hash } = scatterProps(ctx, ctx.root.fork('props'), top, fires);
+  const { food, luggage } = placeLoot(ctx, ctx.root.fork('loot'), top, fires, route.segments, hash);
   lap('oggetti');
 
-  const spawn = { x: 0, y: T.height(0, 6), z: 6 };
-
+  const L = ctx.layout;
   return {
     seed: ctx.seed, seedHash: ctx.seedHash,
-    layout: ctx.layout, length: ctx.layout.length, height: peak.y,
-    terrain: T, noise: ctx.N,
-    campfires: fires, peak, spawn, props, food, luggage, passages,
-    route,
-    // per sapere in che bioma si è (cielo, temperatura): pesi in funzione di (x, z)
-    weightsAt: (x, z) => ctx.weights(z - ctx.shift(x, z)),
+    layout: L, height: L.top, size: ctx.S,
+    core: ctx.core, top, terrain: top, noise: ctx.N,
+    shapes: ctx.shapes, boulders: ctx.boulders,
+    campfires: fires, peak, spawn, props, food, luggage,
+    route: { segments: route.segments, repairs: route.repairs },
+    graph: route.graph,   // grafo degli appoggi (utile per studiare le vie dalla console)
+    // ── interfaccia per la fisica ──
+    sdf: (x, y, z) => ctx.sdf(x, y, z),
+    normal: (x, y, z, out) => ctx.normal(x, y, z, out),
+    materialAt: (x, y, z) => ctx.materialAt(x, y, z),
+    dropTo: (x, y, z, yMin) => ctx.dropTo(x, y, z, yMin),
+    bandAt: y => ctx.bandAt(y),
     stats: {
       timings,
-      cells: T.nx * T.nz,
-      notches, coves, passages: passages.length,
+      boulders: ctx.boulders.length, shapes: ctx.shapes.length,
+      rests: rests.nodes.length,
       repairs: route.repairs.length,
       allOk: route.segments.every(g => g.ok),
       routes: route.segments.map(g => g.routes.length),
-      props: props.length,
-      food: food.length, luggage: luggage.length,
+      props: props.length, food: food.length, luggage: luggage.length,
     },
   };
 }
 
-// Parametri ambientali (cielo, nebbia, temperatura) fusi in base alla posizione.
-export function environmentAt(world, x, z) {
-  const weights = world.weightsAt(x, z);
+// Parametri ambientali (cielo, nebbia, temperatura) fusi in base alla QUOTA.
+export function environmentAt(world, y) {
+  const bands = world.layout.bands, weights = [];
+  for (const b of bands) {
+    let w = 1;
+    if (b.index > 0) w *= smoothstep(b.y0 - 5, b.y0 + 5, y);
+    if (b.index < bands.length - 1) w *= 1 - smoothstep(b.y1 - 5, b.y1 + 5, y);
+    if (w > 1e-4) weights.push([b, w]);
+  }
   let temperature = 0;
   for (const [b, w] of weights) temperature += w * b.def.temperature;
   const main = weights.reduce((a, c) => (c[1] > a[1] ? c : a))[0];
