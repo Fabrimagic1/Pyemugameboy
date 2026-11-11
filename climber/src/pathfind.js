@@ -72,14 +72,14 @@ export class RestGraph {
 
 // Cammino con meno tratti da `start` a `goal` (BFS). Se non esiste, `closest` è il nodo
 // raggiunto più vicino al traguardo: lì il generatore aggiunge un appoggio.
-export function findRoute(graph, start, goal, blocked) {
+export function findRoute(graph, start, goal, blocked, avoid) {
   const prev = new Map([[start, [-1, '']]]), queue = [start], g = graph.nodes[goal];
   let closest = start, best = Infinity;
   for (let h = 0; h < queue.length; h++) {
     const i = queue[h];
     if (i === goal) break;
     const p = graph.nodes[i], d = Math.hypot(p.x - g.x, (p.y - g.y) * 1.3, p.z - g.z);
-    if (d < best) { best = d; closest = i; }
+    if (d < best && !(avoid && avoid.has(i))) { best = d; closest = i; }   // avoid: punti da cui si è già provato a riparare
     for (const [j, type] of graph.edges(i)) {
       if (prev.has(j) || (blocked && blocked.has(j) && j !== goal)) continue;
       prev.set(j, [i, type]); queue.push(j);

@@ -23,7 +23,7 @@ import { MAT, CELL, SEA, STAND_UP, MIN_ROUTES, MAX_ROUTES, ROUTE_SEPARATION, ITE
 
 const DEG = Math.PI / 180, TAU = Math.PI * 2;
 const TOP_RADIUS = 7;      // raggio della cima
-const BEACH = 42;          // larghezza della spiaggia attorno al monte
+const BEACH = 34;          // larghezza della spiaggia attorno al monte
 const GRID = 8;            // lato delle celle dell'indice spaziale dei macigni (m)
 const REACH = 3;           // oltre questa distanza dalla roccia il campo viene troncato
 
@@ -51,18 +51,23 @@ function buildLayout(rng) {
       run: h / Math.tan(rng.range(def.angle[0], def.angle[1]) * DEG), shoulder: last ? 0 : rng.range(9, 12) });
     y += h;
   });
-  // i raggi si calcolano dall'alto: cima, parete, spalla, parete, …
+  // raggi "nominali" (senza terrazze), dall'alto: servono solo per le stime di superficie
   let r = TOP_RADIUS;
-  for (let k = bands.length - 1; k >= 0; k--) {
-    const b = bands[k];
-    b.r1 = r; b.r0 = r + b.run;
-    r = b.r0 + (k > 0 ? bands[k - 1].shoulder : 0);
+  for (let k = bands.length - 1; k >= 0; k--) { const b = bands[k]; b.r1 = r; b.r0 = r + b.run; r = b.r0; }
+  // TERRAZZE: niente anelli. In cima a ogni bioma c'è una spalla piana solo in un settore
+  // (dove sta il falò) più qualche terrazzino sparso; altrove la parete continua.
+  let theta = rng.range(0, TAU);
+  const spawnTheta = theta;
+  for (let k = 0; k < bands.length - 1; k++) {
+    theta = (theta + rng.range(-1.6, 1.6) + TAU) % TAU;
+    bands[k].fireTheta = theta;
+    bands[k].terraces = [{ theta, half: rng.range(0.55, 0.8), w: rng.range(9, 11) }];
+    for (let n = rng.int(1, 3); n > 0; n--) bands[k].terraces.push({ theta: rng.range(0, TAU), half: rng.range(0.25, 0.55), w: rng.range(3, 6) });
   }
-  const R0 = bands[0].r0, top = y;
-  const pts = [[0, top], [TOP_RADIUS, top]];
-  for (let k = bands.length - 1; k >= 0; k--) { pts.push([bands[k].r0, bands[k].y0]); if (k > 0) pts.push([bands[k - 1].r1, bands[k - 1].y1]); }
-  pts.push([R0 + BEACH, 0.3], [R0 + BEACH + 30, -5], [R0 + BEACH + 90, -14]);
-  return { bands, sections: bands, pts, top, baseRadius: R0, islandRadius: R0 + BEACH };
+  // la cima non sta sopra il centro della base: il monte pende da una parte
+  const leanA = rng.range(0, TAU), leanD = rng.range(8, 16);
+  const R0 = bands[0].r0 + 8, top = y;
+  return { bands, sections: bands, top, baseRadius: R0, islandRadius: R0 + BEACH, spawnTheta, lean: [Math.cos(leanA) * leanD, Math.sin(leanA) * leanD] };
 }
 
 // ── contesto di generazione ─────────────────────────────────────────────────
@@ -74,7 +79,7 @@ class Ctx {
     this.layout = buildLayout(this.root.fork('layout'));
     this.N = new Noise3(this.root.fork('noise'));
     this.shapes = buildShapes();
-    const S = Math.ceil(this.layout.islandRadius + 70);
+    const S = Math.ceil(this.layout.islandRadius * 1.45 + 40);
     this.S = S;
     this.core = new Terrain(-S, -S, Math.ceil((2 * S) / CELL) + 1, Math.ceil((2 * S) / CELL) + 1, CELL);
     this.boulders = [];
@@ -87,20 +92,45 @@ class Ctx {
   // la pianta non è un cerchio: lobi e rientranze attorno al monte
   lobe(theta) {
     const c = Math.cos(theta), s = Math.sin(theta), N = this.N;
-    return 1 + 0.17 * N.fbm(c * 1.3 + 4, s * 1.3 + 4, 0.3, 2) + 0.06 * N.fbm(c * 3.7, s * 3.7, 1.7, 2);
+    return 1 + 0.24 * N.fbm(c * 1.3 + 4, s * 1.3 + 4, 0.3, 2) + 0.08 * N.fbm(c * 3.7, s * 3.7, 1.7, 2);
   }
-  profile(rho) {
-    const P = this.layout.pts;
-    if (rho >= P[P.length - 1][0]) return P[P.length - 1][1];
-    let k = 1;
-    while (P[k][0] < rho) k++;
-    const [ra, ya] = P[k - 1], [rb, yb] = P[k];
-    return ya + ((yb - ya) * (rho - ra)) / Math.max(1e-6, rb - ra);
+  // larghezza della spalla in cima alla fascia k, in direzione theta (0 quasi ovunque)
+  shoulder(k, theta) {
+    let w = 0;
+    for (const t of this.layout.bands[k].terraces) {
+      let d = Math.abs(theta - t.theta) % TAU; if (d > Math.PI) d = TAU - d;
+      const f = 1 - (d / t.half) ** 2;
+      if (f > 0) w = Math.max(w, t.w * Math.sqrt(f));
+    }
+    return w;
   }
-  // quota del nucleo
+  // Quota in funzione del raggio "normalizzato" rho, lungo la direzione theta. Dall'alto:
+  // cima, parete (più o meno ripida a seconda del lato), eventuale spalla, parete, …, spiaggia.
+  profile(rho, theta) {
+    const B = this.layout.bands, c = Math.cos(theta), s = Math.sin(theta);
+    let r = TOP_RADIUS;
+    if (rho <= r) return this.layout.top;
+    for (let k = B.length - 1; k >= 0; k--) {
+      const b = B[k], r0 = r + b.run * (1 + 0.4 * this.N.fbm(c * 2.1 + k * 7.3, s * 2.1 - k * 3.1, 0.7, 2));
+      if (rho <= r0) return b.y1 - ((b.y1 - b.y0) * (rho - r)) / (r0 - r);
+      r = r0;
+      if (k > 0) { const sh = this.shoulder(k - 1, theta); if (rho <= r + sh) return b.y0; r += sh; }
+    }
+    const d = rho - r;
+    return d < BEACH ? 3 - 2.7 * (d / BEACH) : d < BEACH + 30 ? 0.3 - 5.3 * ((d - BEACH) / 30) : Math.max(-14, -5 - (d - BEACH - 30) * 0.15);
+  }
+  // quota del nucleo. Il centro si sposta man mano che si sale (monte che pende).
   coreHeight(x, z) {
-    const r = Math.hypot(x, z), th = Math.atan2(z, x);
-    return this.profile(r / this.lobe(th)) + 0.25 * this.N.fbm(x * 0.08, 0.5, z * 0.08, 2);
+    const L = this.layout, k = clamp01(1 - Math.hypot(x, z) / L.baseRadius);
+    const px = x - L.lean[0] * k, pz = z - L.lean[1] * k, th = Math.atan2(pz, px);
+    return this.profile(Math.hypot(px, pz) / this.lobe(th), th) + 0.25 * this.N.fbm(x * 0.08, 0.5, z * 0.08, 2);
+  }
+  // distanza dal centro a cui il nucleo, in direzione theta, scende sotto la quota y (bisezione)
+  radiusAt(theta, y) {
+    const c = Math.cos(theta), s = Math.sin(theta);
+    let a = 0, b = this.layout.islandRadius * 1.6;
+    for (let k = 0; k < 16; k++) { const m = (a + b) / 2; if (this.coreHeight(c * m, s * m) > y) a = m; else b = m; }
+    return (a + b) / 2;
   }
   bakeCore() {
     const T = this.core;
@@ -188,16 +218,17 @@ class Ctx {
 // ── FASE 3a: falò sulle spalle, vetta, partenza ─────────────────────────────
 function placeCampfires(ctx, rng) {
   const L = ctx.layout, fires = [];
-  let theta = rng.range(0, TAU);
-  const spawnTheta = theta;
   for (let k = 0; k < L.bands.length - 1; k++) {
-    theta = (theta + rng.range(-1.6, 1.6) + TAU) % TAU;
-    const rho = (L.bands[k].r1 + L.bands[k + 1].r0) / 2, r = rho * ctx.lobe(theta);
-    fires.push({ index: k, theta, x: Math.cos(theta) * r, z: Math.sin(theta) * r, y: L.bands[k].y1, band: k });
+    // al centro della spalla: tra dove il nucleo sale sopra la quota e dove scende sotto
+    const theta = L.bands[k].fireTheta, y1 = L.bands[k].y1;
+    const r = (ctx.radiusAt(theta, y1 + 0.6) + ctx.radiusAt(theta, y1 - 0.6)) / 2;
+    const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
+    fires.push({ index: k, theta, x, z, y: ctx.coreHeight(x, z), band: k });
   }
-  const peak = { x: 0, z: 0, y: L.top };
-  const rs = (L.baseRadius + 16) * ctx.lobe(spawnTheta);
-  const spawn = { x: Math.cos(spawnTheta) * rs, z: Math.sin(spawnTheta) * rs, theta: spawnTheta };
+  const pr = ctx.radiusAt(0, L.top - 0.5) * 0.3;   // un punto sicuramente sulla cima
+  const peak = { x: L.lean[0] + pr * 0, z: L.lean[1], y: L.top };
+  const rs = ctx.radiusAt(L.spawnTheta, 2.4) + 4;
+  const spawn = { x: Math.cos(L.spawnTheta) * rs, z: Math.sin(L.spawnTheta) * rs, theta: L.spawnTheta };
   return { fires, peak, spawn };
 }
 
@@ -205,13 +236,15 @@ function placeCampfires(ctx, rng) {
 function placeBoulders(ctx, rng, fires) {
   const L = ctx.layout;
   const SLABS = [4, 5], ANY = [0, 1, 2, 3, 4, 5, 6, 7];
+  // confine tra i biomi frastagliato: l'aspetto di un macigno segue la quota più un rumore lungo il giro
+  const bandOf = (y, th) => ctx.bandAt(y + 6 * ctx.N.fbm(Math.cos(th) * 2.5, Math.sin(th) * 2.5, 4.2, 2)).index;
   for (const b of L.bands) {
     const B = b.def.boulder, sAvg = (B.size[0] + B.size[1]) / 2;
     const area = TAU * ((b.r0 + b.r1) / 2) * Math.hypot(b.y1 - b.y0, b.run);
     const n = Math.round((B.density * area) / (1.25 * sAvg * sAvg));
     for (let k = 0; k < n; k++) {
       const theta = rng.range(0, TAU), t = rng.range(-0.04, 1.0), s = rng.range(B.size[0], B.size[1]) * (1 - 0.25 * t * (b.index === L.bands.length - 1 ? 1 : 0));
-      const y = b.y0 + t * (b.y1 - b.y0), r = (b.r0 + (b.r1 - b.r0) * t) * ctx.lobe(theta) + s * rng.range(-0.05, 0.3);
+      const y = b.y0 + t * (b.y1 - b.y0), r = ctx.radiusAt(theta, y) + s * rng.range(0.0, 0.5);   // sporgono: sulle pareti ripide le cenge sono loro
       const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
       // niente macigni addosso ai falò
       if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 6 && Math.abs(f.y - y) < s + 5)) continue;
@@ -219,12 +252,23 @@ function placeBoulders(ctx, rng, fires) {
       const sp = b.def.special, u = rng.next();
       const kind = u < (sp.ice || 0) ? MAT.ICE : u < (sp.ice || 0) + (sp.vine || 0) ? MAT.VINE : u < (sp.ice || 0) + (sp.vine || 0) + (sp.lava || 0) ? MAT.LAVA : MAT.ROCK;
       ctx.addBoulder(flat && rng.chance(0.5) ? rng.pick(SLABS) : rng.pick(ANY), x, y, z, s, rng.range(0, TAU),
-        (flat ? rng.range(0, 5) : rng.range(6, B.tilt)) * DEG, rng.range(0, TAU), kind, b.index, 'wall');
+        (flat ? rng.range(0, 5) : rng.range(6, B.tilt)) * DEG, rng.range(0, TAU), kind, bandOf(y, theta), 'wall');
+    }
+  }
+  // MENSOLE: lastre piccole che sporgono dalla parete. Su pareti quasi verticali i macigni
+  // grossi lasciano troppi metri tra una cima e l'altra: queste riempiono i vuoti.
+  for (const b of L.bands) {
+    const area = TAU * ((b.r0 + b.r1) / 2 + 6) * (b.y1 - b.y0);
+    for (let k = Math.round(area / 26); k > 0; k--) {
+      const theta = rng.range(0, TAU), y = rng.range(b.y0 + 1, b.y1 - 1), s = rng.range(1.7, 2.8);
+      const r = ctx.radiusAt(theta, y) + s * rng.range(0.45, 0.8), x = Math.cos(theta) * r, z = Math.sin(theta) * r;
+      if (fires.some(f => Math.hypot(f.x - x, f.z - z) < s + 5 && Math.abs(f.y - y) < s + 4)) continue;
+      ctx.addBoulder(rng.pick(SLABS), x, y, z, s, rng.range(0, TAU), rng.range(0, 6) * DEG, rng.range(0, TAU), MAT.ROCK, bandOf(y, theta), 'ledge');
     }
   }
   // qualche masso sparso sulla spiaggia
   for (let k = 0; k < 70; k++) {
-    const theta = rng.range(0, TAU), r = rng.range(L.baseRadius + 3, L.islandRadius - 8) * ctx.lobe(theta), s = rng.range(1.2, 3.2);
+    const theta = rng.range(0, TAU), r = ctx.radiusAt(theta, 2.6) + rng.range(2, BEACH - 8), s = rng.range(1.2, 3.2);
     const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
     ctx.addBoulder(rng.pick(ANY), x, ctx.coreHeight(x, z) + s * 0.15, z, s, rng.range(0, TAU), rng.range(0, 20) * DEG, rng.range(0, TAU), MAT.ROCK, 0, 'beach');
   }
@@ -273,10 +317,12 @@ function validateRoutes(ctx, rests, fires, peak, spawn) {
     let segRepairs = 0;
     for (let r = 0; r < MAX_ROUTES; r++) {
       let res;
-      for (let iter = 0; iter < 60; iter++) {
-        res = findRoute(graph, from.node, to.node, blocked);
+      const tried = new Set();   // da ogni punto si ripara una volta sola: se non basta, si prova dal successivo
+      for (let iter = 0; iter < 120; iter++) {
+        res = findRoute(graph, from.node, to.node, blocked, tried);
         if (res.path || r >= MIN_ROUTES) break;
         // RIPARAZIONE: una lastra piana a portata di braccio dal punto raggiunto più vicino al traguardo
+        tried.add(res.closest);
         const a = graph.nodes[res.closest];
         const dx = to.x - a.x, dy = to.y - a.y, dz = to.z - a.z, dl = Math.hypot(dx, dy, dz) || 1;
         let qx = a.x + (dx / dl) * 3.4, qy = a.y + Math.max(1.2, (dy / dl) * 3.4), qz = a.z + (dz / dl) * 3.4;
@@ -330,7 +376,7 @@ function describeRoute(graph, res, index) {
 function bakeTop(ctx, T = null, x0 = -1e9, x1 = 1e9, z0 = -1e9, z1 = 1e9) {
   const C = ctx.core, n = [0, 0, 0];
   if (!T) T = new Terrain(C.x0, C.z0, C.nx, C.nz, C.C);
-  const lim = ctx.layout.islandRadius + 4;
+  const lim = ctx.layout.islandRadius * 1.45;
   const ia = Math.max(0, T.colOf(x0)), ib = Math.min(T.nx - 1, T.colOf(x1)), ja = Math.max(0, T.rowOf(z0)), jb = Math.min(T.nz - 1, T.rowOf(z1));
   for (let j = ja; j <= jb; j++) for (let i = ia; i <= ib; i++) {
     const c = j * T.nx + i, x = T.xOf(i), z = T.zOf(j), hc = C.H[c];
@@ -383,7 +429,7 @@ function scatterProps(ctx, rng, top, fires) {
   const hash = new SpatialHash(4), props = [], L = ctx.layout;
   for (const f of fires) hash.add({ x: f.x, y: f.y, z: f.z, spacing: 5 });
   for (const b of L.bands) {
-    const rMax = (b.index === 0 ? L.islandRadius - 6 : b.r0 + 6) * 1.25, rMin = Math.max(0, b.r1 - 14);
+    const rMax = (b.index === 0 ? L.islandRadius : b.r0 + 22) * 1.3, rMin = 0;
     for (const rule of b.def.props || []) {
       for (let t = 0; t < rule.tries; t++) {
         const th = rng.range(0, TAU), r = Math.sqrt(rng.range(rMin * rMin, rMax * rMax));

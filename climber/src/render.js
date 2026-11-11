@@ -201,7 +201,7 @@ export class WorldView {
 
   buildIsland() {
     const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000),
-      new THREE.MeshStandardMaterial({ color: '#27a9c9', roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.82 }));
+      new THREE.MeshStandardMaterial({ color: '#27a9c9', roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.96 }));
     water.rotation.x = -Math.PI / 2; water.position.set(0, SEA, 0);
     this.scene.add(water);
   }

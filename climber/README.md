@@ -85,9 +85,11 @@ numeri casuali delle altre.
 
 ### 1. Layout: fasce di bioma e spalle (`buildLayout`, dati in `src/biomes.js`)
 La montagna è un'isola, scalabile da ogni lato. `BIOME_SLOTS` elenca gli slot dal basso; per ogni
-slot il seed sceglie un bioma, la sua altezza (25–65 m) e l'inclinazione della parete (62–80°).
-Tra un bioma e l'altro c'è una **spalla** piana di una decina di metri, dove sta il falò: breve
-tratto piano, poi di nuovo scalata. In tutto ≈ 240 m di quota su ≈ 120 m di raggio alla base.
+slot il seed sceglie un bioma, la sua altezza (25–65 m) e l'inclinazione della parete (68–86°).
+In cima a ogni bioma c'è una **spalla** piana solo nel settore del falò, più qualche terrazzino
+sparso: niente anelli regolari. La pendenza cambia lato per lato, la cima è spostata rispetto alla
+base (il monte pende) e il confine tra i biomi è frastagliato. In tutto ≈ 240 m di quota su ≈ 60 m
+di raggio alla base: una torre.
 
 ### 2. Il nucleo (`bakeCore`)
 Una heightmap a gradoni (pareti ripide e spalle piane), con la pianta deformata da "lobi" di
@@ -101,7 +103,8 @@ definizione escono tre cose:
 - la **distanza** da un punto alla roccia, che per un convesso è `max_i (n_i · p − d_i)`;
 - le **facce**, da cui si ricavano le cenge.
 
-Ci sono 8 modelli (blocchi, lastre, pilastri, cunei). `placeBoulders` ne appoggia ≈ 3300 sulle
+Ci sono 8 modelli (blocchi, lastre, pilastri, cunei). `placeBoulders` ne appoggia ≈ 3500 (macigni
+grossi più uno strato di lastre piccole che sporgono come mensole) sulle
 pareti del nucleo: per ogni bioma il seed sceglie punto, modello, scala, rotazione e inclinazione.
 Una parte è messa "in piano" (`flat`), così la cima è una cengia sicura; il resto è inclinato a
 caso e crea falde, spigoli e **strapiombi**. Alcuni macigni sono speciali: ghiacciati, coperti di

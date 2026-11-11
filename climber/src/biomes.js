@@ -29,8 +29,8 @@ export const BIOME_SLOTS = [
 export const BIOMES = {
   shore: {
     name: 'Spiaggia',
-    height: [24, 30], angle: [62, 68],
-    boulder: { size: [3.2, 6.5], tilt: 28, density: 1.25, flat: 0.55 },
+    height: [24, 30], angle: [68, 74],
+    boulder: { size: [3.2, 6.5], tilt: 28, density: 1.55, flat: 0.70 },
     rock: '#8d8779', top: '#e3bd72', topMat: 'SAND',
     special: {},
     temperature: 0,
@@ -43,8 +43,8 @@ export const BIOMES = {
   },
   jungle: {
     name: 'Giungla',
-    height: [52, 62], angle: [70, 76],
-    boulder: { size: [3.6, 7.5], tilt: 30, density: 1.3, flat: 0.5 },
+    height: [52, 62], angle: [77, 83],
+    boulder: { size: [3.6, 7.5], tilt: 30, density: 1.60, flat: 0.65 },
     rock: '#6f6a55', top: '#5aa83a', topMat: 'MOSS',
     special: { vine: 0.22 },
     temperature: 0.15,
@@ -57,8 +57,8 @@ export const BIOMES = {
   },
   fungal: {
     name: 'Bosco dei Funghi',
-    height: [52, 62], angle: [70, 76],
-    boulder: { size: [3.6, 7.0], tilt: 26, density: 1.3, flat: 0.55 },
+    height: [52, 62], angle: [77, 83],
+    boulder: { size: [3.6, 7.0], tilt: 26, density: 1.60, flat: 0.70 },
     rock: '#62507a', top: '#a07fc4', topMat: 'MOSS',
     special: {},
     temperature: 0.1,
@@ -71,8 +71,8 @@ export const BIOMES = {
   },
   alpine: {
     name: 'Ghiacciaio',
-    height: [56, 66], angle: [72, 78],
-    boulder: { size: [4.0, 8.0], tilt: 32, density: 1.25, flat: 0.5 },
+    height: [56, 66], angle: [79, 85],
+    boulder: { size: [4.0, 8.0], tilt: 32, density: 1.55, flat: 0.65 },
     rock: '#6f7f98', top: '#f2f7fb', topMat: 'SNOW',
     special: { ice: 0.2 },
     temperature: -1,
@@ -85,8 +85,8 @@ export const BIOMES = {
   },
   mesa: {
     name: 'Altopiano Rosso',
-    height: [54, 64], angle: [74, 80],
-    boulder: { size: [3.8, 7.5], tilt: 16, density: 1.3, flat: 0.7 },   // blocchi squadrati e ordinati
+    height: [54, 64], angle: [80, 86],
+    boulder: { size: [3.8, 7.5], tilt: 16, density: 1.60, flat: 0.85 },   // blocchi squadrati e ordinati
     rock: '#b5603a', top: '#e0a264', topMat: 'SAND',
     special: {},
     temperature: 1,
@@ -99,8 +99,8 @@ export const BIOMES = {
   },
   caldera: {
     name: 'Caldera',
-    height: [46, 56], angle: [70, 76],
-    boulder: { size: [3.6, 7.5], tilt: 34, density: 1.3, flat: 0.5 },
+    height: [46, 56], angle: [77, 83],
+    boulder: { size: [3.6, 7.5], tilt: 34, density: 1.60, flat: 0.65 },
     rock: '#3c3236', top: '#5e4a48', topMat: 'ROCK',
     special: { lava: 0.07 },
     temperature: 0.7,
@@ -113,8 +113,8 @@ export const BIOMES = {
   },
   summit: {
     name: 'Vetta',
-    height: [36, 44], angle: [72, 78],
-    boulder: { size: [3.2, 6.5], tilt: 30, density: 1.3, flat: 0.5 },
+    height: [36, 44], angle: [76, 82],
+    boulder: { size: [3.2, 6.5], tilt: 30, density: 1.60, flat: 0.65 },
     rock: '#7d8696', top: '#f4f8fc', topMat: 'SNOW',
     special: { ice: 0.15 },
     temperature: -0.8,
