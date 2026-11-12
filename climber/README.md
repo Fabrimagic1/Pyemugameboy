@@ -241,6 +241,19 @@ Il nucleo (la heightmap sotto i macigni) taglia ogni quadrato di griglia lungo l
 salto: sulle pareti ripide evita i "denti a sega".
 
 ### Il personaggio
+Il GLB del pacchetto (`assets/climber.glb`) viene migliorato al caricamento (`src/character.js`):
+- **Geometria** (`refineSkinned` in `src/toon.js`): ogni triangolo viene diviso in 4, con i pesi
+  delle ossa ereditati dagli estremi di ogni spigolo, e poi levigato (Taubin). Braccia e gambe
+  passano da scatole a capsule, con la stessa animazione. `?char=0` per l'originale, `?char=2` per
+  una suddivisione in più.
+- **Colori**: il pacchetto scriveva colori sRGB nel campo lineare di glTF, quindi risultavano
+  pastello; vengono riportati ai valori voluti.
+- **Tessuti e pelle reali** (Higgsfield): giacca, pantaloni, zaino e pelle. La texture dà solo la
+  luminosità (il colore lo dà il materiale), in proiezione triplanare sulla posizione prima dello
+  skinning, quindi segue il corpo mentre si muove. Con un rilievo leggero.
+- Nome dei materiali: i materiali del GLB si chiamano `shirt`, `pants`, `skin`, `pack`, `boots`…
+  e la corrispondenza con le texture è in `buildFromModel`.
+
 `src/character.js` costruisce uno scheletro di gruppi annidati (spalla → gomito → mano, anca →
 ginocchio → piede) e lo anima in base allo stato del giocatore:
 - **camminata/corsa**: gambe e braccia che oscillano in base alla distanza percorsa;

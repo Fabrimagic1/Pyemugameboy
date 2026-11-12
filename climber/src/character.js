@@ -8,7 +8,7 @@
 //     usa AnimationMixer e sceglie la clip (idle/walk/run/climb/fall).
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
-import { toon, softenScene } from './toon.js';
+import { toon, softenScene, refineSkinned, applyMaterialTextures, STYLE } from './toon.js';
 
 const lam = (color, extra = {}) => toon({ color, rim: 0.35, ...extra });
 
@@ -21,6 +21,7 @@ function limb(radiusTop, radiusBottom, length, mat) {
 
 export class Character {
   constructor(assets) {
+    this.assets = assets;
     this.root = new THREE.Group();
     this.walkPhase = 0; this.climbPhase = 0; this.time = 0;
     this.last = null;
@@ -86,6 +87,18 @@ export class Character {
     model.scale.setScalar(def.scale ?? 1);
     // le mesh con skin si deformano: il bounding box statico non basta per il culling
     softenScene(model, { rim: 0.12 });   // normali morbide + toon, come il resto del mondo
+    // più triangoli e forme a capsula invece di scatole (?char=0 per il modello originale)
+    const refine = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('char') ?? 1) : 1;
+    if (refine > 0) model.traverse(o => { if (o.isSkinnedMesh) o.geometry = refineSkinned(o.geometry, refine, 3); });
+    // tessuto e pelle reali (Higgsfield): assets/manifest.json → textures.char_*
+    const tx = (this.assets && this.assets.textures) || {};
+    if (STYLE === 'real') applyMaterialTextures(model, {
+      shirt: { map: tx.char_jacket, scale: 1.4, bump: 0.18, roughness: 0.82 },
+      pants: { map: tx.char_trousers, scale: 1.6, bump: 0.15, roughness: 0.9 },
+      skin: { map: tx.char_skin, scale: 1.2, bump: 0.05, roughness: 0.55 },
+      pack: { map: tx.char_canvas, scale: 1.4, bump: 0.15, roughness: 0.92 },
+      boots: { roughness: 0.55 },
+    });
     model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
     // gruppo intermedio per inclinare il corpo verso la parete (le clip non lo fanno)
     this.lean = new THREE.Group();

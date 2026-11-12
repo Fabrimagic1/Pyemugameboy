@@ -72,7 +72,7 @@ export function toToon(m, opts = {}) {
   if (m.isMeshToonMaterial) return m;
   const key = m.uuid + JSON.stringify(opts);
   if (!cache.has(key)) cache.set(key, toon({
-    color: m.color, map: m.map || null, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity ?? 1,
+    name: m.name, color: m.color, map: m.map || null, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity ?? 1,
     ...(STYLE === 'real' && m.roughness !== undefined ? { roughness: Math.max(0.6, m.roughness) } : {}),
     transparent: m.transparent, opacity: m.opacity, side: m.side, ...opts,
   }));
@@ -100,4 +100,105 @@ export function softenScene(scene, opts = {}) {
     o.castShadow = true;
   });
   return scene;
+}
+
+// ── Personaggio: più triangoli e forme più morbide, senza perdere lo scheletro ──
+// I modelli low-poly hanno arti fatti di scatole. Qui ogni triangolo viene diviso in 4 (con i
+// pesi delle ossa ereditati dagli estremi di ogni spigolo) e poi si leviga con Taubin (due passi:
+// uno che arrotonda, uno che compensa il restringimento). Il risultato: braccia e gambe a
+// capsula, stessa animazione. Funziona perché ogni parte è rigida su un solo osso.
+export function refineSkinned(geo, steps = 1, smooth = 3) {
+  let g = geo;
+  for (let s = 0; s < steps; s++) {
+    const idx = g.index.array, attrs = Object.entries(g.attributes), vcount = g.attributes.position.count;
+    const out = attrs.map(([, a]) => ({ a, data: Array.from(a.array) })), mid = new Map(), tris = [];
+    const edge = (i, j) => {
+      const key = i < j ? i * 1e6 + j : j * 1e6 + i;
+      let m = mid.get(key);
+      if (m === undefined) {
+        m = out[0].data.length / out[0].a.itemSize;
+        out.forEach(({ a, data }, k) => {
+          const isIdx = attrs[k][0] === 'skinIndex';
+          for (let c = 0; c < a.itemSize; c++) data.push(isIdx ? a.array[i * a.itemSize + c] : (a.array[i * a.itemSize + c] + a.array[j * a.itemSize + c]) / 2);
+        });
+        mid.set(key, m);
+      }
+      return m;
+    };
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2], ab = edge(a, b), bc = edge(b, c), ca = edge(c, a);
+      tris.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+    }
+    const ng = new THREE.BufferGeometry();
+    out.forEach(({ a, data }, k) => ng.setAttribute(attrs[k][0], new THREE.BufferAttribute(new a.array.constructor(data), a.itemSize)));
+    ng.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1));
+    g = ng;
+  }
+  // adiacenza per levigare
+  const P = g.attributes.position, n = P.count, nb = Array.from({ length: n }, () => new Set());
+  const I = g.index.array;
+  for (let t = 0; t < I.length; t += 3) for (let k = 0; k < 3; k++) { nb[I[t + k]].add(I[t + (k + 1) % 3]); nb[I[t + (k + 1) % 3]].add(I[t + k]); }
+  const pos = P.array, tmp = new Float32Array(pos.length);
+  const pass = f => {
+    for (let v = 0; v < n; v++) {
+      const s = nb[v]; if (!s.size) { tmp.set(pos.subarray(v * 3, v * 3 + 3), v * 3); continue; }
+      let x = 0, y = 0, z = 0; for (const w of s) { x += pos[w * 3]; y += pos[w * 3 + 1]; z += pos[w * 3 + 2]; }
+      const k = 1 / s.size;
+      tmp[v * 3] = pos[v * 3] + f * (x * k - pos[v * 3]); tmp[v * 3 + 1] = pos[v * 3 + 1] + f * (y * k - pos[v * 3 + 1]); tmp[v * 3 + 2] = pos[v * 3 + 2] + f * (z * k - pos[v * 3 + 2]);
+    }
+    pos.set(tmp);
+  };
+  for (let s = 0; s < smooth; s++) { pass(0.5); pass(-0.53); }
+  g.computeVertexNormals();
+  return g;
+}
+
+// Texture di tessuto/pelle per nome di materiale del GLB, in proiezione triplanare nello spazio
+// dell'oggetto (la posizione prima dello skinning: la texture segue il corpo mentre si muove).
+//   spec[nome] = { map, scale, bump, roughness, tint }
+export function applyMaterialTextures(root, spec) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach(m => {
+      // il pacchetto del personaggio ha scritto i colori sRGB nel campo lineare di glTF:
+      // letti come lineari vengono pastello. Qui si riportano ai valori voluti (una volta sola).
+      if (!m.userData.srgbFixed) { m.color.convertSRGBToLinear(); m.userData.srgbFixed = true; }
+      const s = spec[m.name]; if (!s) return;
+      m.color.multiplyScalar(s.exposure ?? 1);
+      if (s.roughness !== undefined && m.roughness !== undefined) m.roughness = s.roughness;
+      if (s.tint) m.color.multiply(s.tint);
+      if (!s.map) return;
+      const prev = m.onBeforeCompile;
+      m.onBeforeCompile = shader => {
+        prev && prev(shader);
+        shader.uniforms.uTex = { value: s.map }; shader.uniforms.uAvg = { value: s.map.userData.avgLum || 0.4 };
+        shader.uniforms.uScale = { value: s.scale || 3 }; shader.uniforms.uBump = { value: s.bump || 0 };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vON;')
+          .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvON = normal;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOP = position;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vON; uniform sampler2D uTex; uniform float uAvg; uniform float uScale; uniform float uBump;\nfloat gH = 0.0;')
+          .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+            if (uBump > 0.0) {
+              vec3 dpx = dFdx(-vViewPosition), dpy = dFdy(-vViewPosition);
+              float dhx = dFdx(gH), dhy = dFdy(gH);
+              vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx);
+              float det = dot(dpx, r1);
+              normal = normalize(abs(det) * normal - uBump * sign(det) * (dhx * r1 + dhy * r2));
+            }`)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+            {
+              vec3 bw = pow(abs(vON), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+              vec3 t = texture2D(uTex, vOP.zy * uScale, 1.8).rgb * bw.x + texture2D(uTex, vOP.xz * uScale, 1.8).rgb * bw.y + texture2D(uTex, vOP.xy * uScale, 1.8).rgb * bw.z;   // bias 1.8 = sfocata, niente mosaico
+              float l = dot(t, vec3(0.299, 0.587, 0.114)) / uAvg;     // solo la luminosità: il colore lo dà il materiale
+              diffuseColor.rgb *= mix(1.0, clamp(l, 0.5, 1.5), 0.6);
+              gH = l;
+            }`);
+      };
+      m.customProgramCacheKey = () => 'ctex|' + m.name;
+      m.needsUpdate = true;
+    });
+  });
 }

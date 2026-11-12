@@ -22,7 +22,11 @@
     "rock": "rock.jpg",
     "ground": "ground.jpg",
     "foliage": "tex/foliage.jpg",
-    "bark": "tex/bark.jpg"
+    "bark": "tex/bark.jpg",
+    "char_jacket": "tex/char_jacket.jpg",
+    "char_trousers": "tex/char_trousers.jpg",
+    "char_skin": "tex/char_skin.jpg",
+    "char_canvas": "tex/char_canvas.jpg"
   },
   "character": {
     "file": "climber.glb",

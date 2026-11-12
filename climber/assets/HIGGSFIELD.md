@@ -6,6 +6,7 @@
 |---|---|---|
 | 14 texture del terreno (roccia + cima per 7 biomi) | **fatte** e collegate al gioco | `tex/` |
 | Texture di corteccia e fogliame per gli alberi | **fatte** e collegate al gioco | `tex/bark.jpg`, `tex/foliage.jpg` |
+| Texture del personaggio: giacca, pantaloni, pelle, tela dello zaino | **fatte** e collegate al gioco | `tex/char_*.jpg` |
 | Immagini di riferimento per i modelli 3D | da fare (gratis con la prova illimitata, vedi sotto) | — |
 | Modelli 3D (personaggio, oggetti, falò) | da fare, servono crediti | — |
 

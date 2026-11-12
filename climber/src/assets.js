@@ -48,6 +48,7 @@ export async function loadAssets(base = 'assets/') {
   await Promise.all(Object.entries(manifest.textures || {}).map(([name, file]) => new Promise(res => {
     tl.load(base + file, tex => {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;   // senza questo le texture risultano slavate
       tex.userData.avgLum = averageLuminance(tex.image);
       tex.anisotropy = 8;
       out.textures[name] = tex; res();
