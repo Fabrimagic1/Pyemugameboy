@@ -10,6 +10,11 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
+// STILE: 'real' (predefinito) = materiali fisici, luce morbida, riflessi del cielo;
+//        'toon' (?style=toon)  = cel shading a fasce con luce di contorno.
+// Tutto il gioco crea i materiali con toon(): cambiare stile è cambiare questa riga.
+export const STYLE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('style') === 'toon' ? 'toon' : 'real';
+
 export const windTime = { value: 0 };
 let patchCount = 0;   // condiviso da tutti i materiali che oscillano
 
@@ -26,12 +31,16 @@ export const RAMP_TERRAIN = ramp([150, 156, 166, 190, 218, 238, 250, 255], THREE
 
 // Materiale toon con rim light e (opzionale) oscillazione al vento.
 // sway = ampiezza in metri per metro di altezza sopra swayBase.
-export function toon({ rim = 0.3, sway = 0, swayBase = 0, ramp: r = RAMP_OBJECT, patch = null, ...params } = {}) {
-  const m = new THREE.MeshToonMaterial({ gradientMap: r, ...params });
+export function toon({ rim = 0.3, sway = 0, swayBase = 0, ramp: r = RAMP_OBJECT, patch = null, roughness = 0.88, ...params } = {}) {
+  const real = STYLE === 'real';
+  if (real) rim = 0;   // la luce di contorno è un effetto da cartone
+  const m = real
+    ? new THREE.MeshStandardMaterial({ roughness, metalness: 0, envMapIntensity: 0.32, ...params })
+    : new THREE.MeshToonMaterial({ gradientMap: r, ...params });
   // three.js riusa il programma compilato tra materiali "uguali", e per lui due materiali con la
   // stessa onBeforeCompile (stesso testo) lo sono, anche se le costanti iniettate sono diverse.
   // Senza una chiave propria, un oggetto può ritrovarsi con lo shader di un altro (es. quello dei macigni).
-  const key = `toon|${rim}|${sway}|${swayBase}|${patch ? ++patchCount : 0}`;
+  const key = `${STYLE}|${rim}|${sway}|${swayBase}|${patch ? ++patchCount : 0}`;
   m.customProgramCacheKey = () => key;
   m.onBeforeCompile = shader => {
     if (rim > 0) shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
@@ -64,6 +73,7 @@ export function toToon(m, opts = {}) {
   const key = m.uuid + JSON.stringify(opts);
   if (!cache.has(key)) cache.set(key, toon({
     color: m.color, map: m.map || null, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity ?? 1,
+    ...(STYLE === 'real' && m.roughness !== undefined ? { roughness: Math.max(0.6, m.roughness) } : {}),
     transparent: m.transparent, opacity: m.opacity, side: m.side, ...opts,
   }));
   return cache.get(key);

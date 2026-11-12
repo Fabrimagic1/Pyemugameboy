@@ -11,6 +11,7 @@ import { Player } from './player.js';
 import { Hud } from './hud.js';
 import { Fog } from './fog.js';
 import { Grass } from './grass.js';
+import { STYLE } from './toon.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -35,22 +36,49 @@ async function start() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;   // resa "cinematografica": luci morbide, colori pieni
-  renderer.toneMappingExposure = 0.95;
+  renderer.toneMappingExposure = STYLE === 'real' ? 0.7 : 0.95;
   $('game').appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 4000);
-  const hemi = new THREE.HemisphereLight('#dfefff', '#6b5a48', 1.0);
+  const real = STYLE === 'real';
+  // con lo stile realistico la luce d'ambiente viene soprattutto dal cielo (vedi sotto):
+  // l'emisferica resta solo come riempimento leggero
+  const hemi = new THREE.HemisphereLight('#dfefff', '#6b5a48', real ? 0.12 : 1.0);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight('#ffeccd', 2.6);
-  const sunDir = new THREE.Vector3(0.5, 0.8, 0.3).normalize();
+  const sun = new THREE.DirectionalLight(real ? '#fff1dc' : '#ffeccd', real ? 5.2 : 2.6);
+  const sunDir = (real ? new THREE.Vector3(0.55, 0.6, 0.35) : new THREE.Vector3(0.5, 0.8, 0.3)).normalize();
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(real ? 4096 : 2048, real ? 4096 : 2048);
+  sun.shadow.normalBias = 0.05; sun.shadow.radius = 2.5;
   Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 260 });
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
   const view = new WorldView(world, scene, assets);
+  view.skyUniforms.sunDir.value.copy(sunDir);
+  // CIELO ATMOSFERICO: simula la diffusione della luce nell'aria (cielo più chiaro all'orizzonte,
+  // alone attorno al sole). Lo stesso cielo viene "fotografato" in una mappa d'ambiente che
+  // illumina la scena da tutte le direzioni e si riflette su acqua e superfici lucide.
+  if (real) {
+    try {
+      const { Sky } = await import('three/addons/objects/Sky.js');
+      const mkSky = () => {
+        const s = new Sky(); s.scale.setScalar(3500);
+        Object.assign(s.material.uniforms.turbidity, { value: 5 }); s.material.uniforms.rayleigh.value = 1.4;
+        s.material.uniforms.mieCoefficient.value = 0.004; s.material.uniforms.mieDirectionalG.value = 0.82;
+        s.material.uniforms.sunPosition.value.copy(sunDir);
+        return s;
+      };
+      const pmrem = new THREE.PMREMGenerator(renderer), envScene = new THREE.Scene();
+      envScene.add(mkSky());
+      scene.environment = pmrem.fromScene(envScene, 0, 0.1, 4000).texture;
+      pmrem.dispose();
+      view.realSky = mkSky(); view.realSky.material.fog = false;
+      scene.add(view.realSky);
+      view.sky.visible = false;
+    } catch (e) { console.warn('Cielo atmosferico non disponibile:', e.message || e); }
+  }
   const player = new Player(world);
   const character = new Character(assets);
   scene.add(character.root);

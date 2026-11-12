@@ -209,23 +209,36 @@ Puoi riscriverlo da zero tenendo la stessa interfaccia (posizione in `x, y, z`, 
 tuo personaggio: ad esempio, se aggiungi un rampino che fa salire di 6 m gratis, il validatore può
 saperlo e permettere pareti più lunghe tra un riposo e l'altro.
 
-### Stile grafico: toon, vegetazione organica, erba
-Tre tecniche, tutte spiegate nei commenti dei rispettivi file:
+### Stile grafico: realistico (predefinito) o cartone
+`?style=toon` torna al cel shading; senza parametri si usa lo stile **realistico**. Tutto il gioco
+crea i materiali con `toon()` in `src/toon.js`: lo stile è deciso lì, in un punto solo.
 
-- **Toon shading** (`src/toon.js`): la luce passa per poche fasce invece di sfumare (rampa
-  `gradientMap`), più una luce di contorno (rim light). Perché funzioni servono **normali morbide**:
-  `smoothGeometry` unisce i vertici duplicati dei modelli low-poly e ricalcola le normali, così gli
-  oggetti non sono più sfaccettati senza aggiungere triangoli. I cristalli restano sfaccettati
-  (`"flat": true` nel manifest).
-- **Vegetazione procedurale** (`src/flora.js`): tronchi a tubo curvo con la base allargata, chiome
-  fatte di masse arrotondate con normali "sferizzate" e colore sfumato dal verde scuro (sotto) al
-  chiaro (sopra), palme con foglie arcuate, pini a balze con la neve. Ogni tipo ha 3–4 varianti e
-  oscilla al vento nel vertex shader. Per usare un GLB al posto di una pianta basta rimetterlo nel
-  manifest (`palm`, `jungleTree`, `bush`, `pine`).
-- **Erba** (`src/grass.js`): ciuffi instanziati a piastrelle di 10 m attorno al giocatore, riempite
-  poche per frame. Vento, piegatura al passaggio e dissolvenza in lontananza sono nel vertex
-  shader. Colore, densità e altezza vengono dal bioma (`grass` in `biomes.js`). `?grass=0` la
-  spegne, `?grass=2` la infittisce.
+Cosa rende l'aspetto realistico (`STYLE = 'real'`):
+- **Materiali fisici** (`MeshStandardMaterial`): la luce sfuma in modo naturale invece che a fasce.
+- **Cielo atmosferico** (`Sky` di three.js): diffusione della luce nell'aria, alone attorno al sole.
+  Lo stesso cielo viene "fotografato" in una mappa d'ambiente che illumina tutta la scena e si
+  riflette su acqua e superfici lucide. Esposizione e tone mapping (ACES) sono regolati in `main.js`.
+- **Macigni arrotondati** (`shapeMesh` in `src/boulders.js`): ogni faccia del poliedro viene
+  suddivisa, i vertici vengono spinti verso l'interno vicino a spigoli e angoli (spigoli smussati)
+  e con un rumore fine (superficie irregolare); le normali sono mediate, quindi piatte sulle facce e
+  sfumate sugli spigoli. `?detail=2` (predefinito, ≈ 580 triangoli per macigno), `?detail=1`
+  (≈ 140, più leggero), `?detail=0` (facce piatte).
+- **Rilievo** (bump mapping nello shader dei macigni): l'altezza è la luminosità della texture, quindi
+  le crepe diventano incavi che prendono luce e ombra.
+- **Texture vere** da Higgsfield: roccia e cima per bioma, corteccia e fogliame per gli alberi
+  (proiezione triplanare, senza UV).
+- **Acqua** con mappa di normali che scorre e riflessi del cielo.
+- **Ombre** a 4096 px con `normalBias`.
+
+Altre tecniche, valide in entrambi gli stili:
+- **Normali morbide** (`smoothGeometry`): i modelli GLB low-poly non sono più sfaccettati.
+- **Vegetazione procedurale** (`src/flora.js`): tronchi a tubo curvo, chiome di masse arrotondate,
+  palme con foglie arcuate, pini a balze; più varianti per tipo, vento nel vertex shader.
+- **Erba** (`src/grass.js`): ciuffi instanziati a piastrelle attorno al giocatore, con vento e
+  piegatura al passaggio. `?grass=0` la spegne, `?grass=2` la infittisce.
+
+Il nucleo (la heightmap sotto i macigni) taglia ogni quadrato di griglia lungo la diagonale di minor
+salto: sulle pareti ripide evita i "denti a sega".
 
 ### Il personaggio
 `src/character.js` costruisce uno scheletro di gruppi annidati (spalla → gomito → mano, anca →

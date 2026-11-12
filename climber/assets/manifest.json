@@ -20,7 +20,9 @@
   },
   "textures": {
     "rock": "rock.jpg",
-    "ground": "ground.jpg"
+    "ground": "ground.jpg",
+    "foliage": "tex/foliage.jpg",
+    "bark": "tex/bark.jpg"
   },
   "character": {
     "file": "climber.glb",

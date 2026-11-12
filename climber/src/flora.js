@@ -17,8 +17,9 @@ const C = h => new THREE.Color(h);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // colora i vertici con fn(colore, x, y, z, normaleY)
-function paint(geo, fn) {
+function paint(geo, fn, kind = 1) {
   const p = geo.attributes.position, n = geo.attributes.normal, c = new Float32Array(p.count * 3), col = new THREE.Color();
+  geo.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(p.count).fill(kind), 1));   // 0 = corteccia, 1 = foglie
   for (let i = 0; i < p.count; i++) {
     fn(col, p.getX(i), p.getY(i), p.getZ(i), n.getY(i));
     c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b;
@@ -90,7 +91,7 @@ function frond(origin, dir, length, width, droop) {
 }
 
 const BARK = [C('#4a3323'), C('#6b4a31'), C('#8a6846')];
-const bark = geo => paint(geo, (col, x, y, z) => ramp3(col, BARK[0], BARK[1], BARK[2], 0.45 + 0.4 * n3(x * 3, y * 0.8, z * 3)));
+const bark = geo => paint(geo, (col, x, y, z) => ramp3(col, BARK[0], BARK[1], BARK[2], 0.45 + 0.4 * n3(x * 3, y * 0.8, z * 3)), 0);
 const leaves = (geo, pal, r) => paint(geo, (col, x, y, z, ny) =>
   ramp3(col, pal[0], pal[1], pal[2], 0.5 + 0.38 * (y / r) + 0.22 * ny + 0.12 * n3(x, y, z)));
 const done = parts => mergeGeometries(parts.map(g => (g.index ? g.toNonIndexed() : g)), false);
@@ -116,13 +117,13 @@ function palm(seed) {
   const pal = [C('#1f6b34'), C('#44a544'), C('#b5dc5c')];
   const pts = [], rad = [];
   for (let i = 0; i <= 7; i++) { const t = i / 7; pts.push(V(bend * t * t, H * t - 0.2, 0)); rad.push(0.34 - 0.17 * t + (i === 0 ? 0.14 : 0)); }
-  const parts = [paint(tube(pts, rad, 8), (col, x, y) => ramp3(col, BARK[0], BARK[2], C('#a88a5c'), 0.5 + 0.35 * Math.sin(y * 9)))];
+  const parts = [paint(tube(pts, rad, 8), (col, x, y) => ramp3(col, BARK[0], BARK[2], C('#a88a5c'), 0.5 + 0.35 * Math.sin(y * 9)), 0)];
   const crown = pts[7], n = 9 + Math.floor(R() * 3);
   for (let k = 0; k < n; k++) {
     const a = (k / n) * Math.PI * 2 + R() * 0.4, L = 2.6 + R() * 0.9;
     parts.push(leaves(frond(crown, V(Math.cos(a), 0, Math.sin(a)), L, 0.95, 1.7 + R() * 0.9), pal, 1.2).translate(0, 0, 0));
   }
-  for (let k = 0; k < 3; k++) parts.push(paint(blob(0.19, { detail: 1, rough: 0.05 }), col => col.set('#5b3d22')).translate(crown.x + Math.cos(k * 2.1) * 0.25, crown.y - 0.22, Math.sin(k * 2.1) * 0.25));
+  for (let k = 0; k < 3; k++) parts.push(paint(blob(0.19, { detail: 1, rough: 0.05 }), col => col.set('#5b3d22'), 0).translate(crown.x + Math.cos(k * 2.1) * 0.25, crown.y - 0.22, Math.sin(k * 2.1) * 0.25));
   return done(parts);
 }
 
@@ -169,12 +170,40 @@ export const FLORA = {
   bush:       { variants: 3, build: bush, mat: { sway: 0.03, swayBase: 0.2 } },
 };
 
+// Texture vere su corteccia e foglie (assets/manifest.json → textures.bark / textures.foliage):
+// proiezione triplanare in spazio dell'oggetto, quindi senza coordinate UV. Il colore dei vertici
+// (scuro sotto, chiaro sopra) viene usato come luminosità, così la chioma resta sfumata.
+function treeTextures(tx) {
+  if (!tx || !tx.bark || !tx.foliage) return null;
+  return shader => {
+    shader.uniforms.uBark = { value: tx.bark }; shader.uniforms.uLeaf = { value: tx.foliage };
+    shader.uniforms.uBarkAvg = { value: tx.bark.userData.avgLum || 0.3 }; shader.uniforms.uLeafAvg = { value: tx.foliage.userData.avgLum || 0.3 };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aKind; varying float vKind; varying vec3 vOP; varying vec3 vON;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKind = aKind; vOP = position; vON = normal;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying float vKind; varying vec3 vOP; varying vec3 vON;
+        uniform sampler2D uBark; uniform sampler2D uLeaf; uniform float uBarkAvg; uniform float uLeafAvg;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 bw = pow(abs(vON), vec3(3.0)); bw /= (bw.x + bw.y + bw.z);
+          vec3 b = texture2D(uBark, vec2(vOP.x + vOP.z, vOP.y) * 0.9).rgb;               // solchi verticali
+          vec3 l = texture2D(uLeaf, vOP.zy * 0.42).rgb * bw.x + texture2D(uLeaf, vOP.xz * 0.42).rgb * bw.y + texture2D(uLeaf, vOP.xy * 0.42).rgb * bw.z;
+          float v = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));                    // luminosità dal colore dei vertici
+          vec3 tex = mix(l / uLeafAvg * 0.55, b / uBarkAvg * 0.5, 1.0 - step(0.5, vKind));
+          vec3 tint = diffuseColor.rgb / max(v, 0.02);                                   // tinta (verde, marrone…)
+          diffuseColor.rgb = clamp(tex, 0.0, 2.0) * mix(vec3(1.0), tint, 0.55) * v * 2.2;
+        }`);
+  };
+}
+
 const built = new Map();
-export function floraPart(type, variant) {
+export function floraPart(type, variant, tx = null) {
   const key = type + '|' + variant;
   if (!built.has(key)) {
-    const f = FLORA[type];
-    built.set(key, { geometry: f.build(variant * 31 + type.length * 7 + 1), material: toon({ vertexColors: true, rim: 0.22, ...f.mat }), matrix: new THREE.Matrix4() });
+    const f = FLORA[type], patch = treeTextures(tx);
+    built.set(key, { geometry: f.build(variant * 31 + type.length * 7 + 1), material: toon({ vertexColors: true, rim: 0.22, patch, ...f.mat }), matrix: new THREE.Matrix4() });
   }
   return built.get(key);
 }

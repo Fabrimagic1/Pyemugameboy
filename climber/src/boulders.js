@@ -92,3 +92,54 @@ export function shapeDistance(shape, x, y, z) {
   }
   return m;
 }
+
+// ── Mesh "realistica" di un macigno ──────────────────────────────────────────
+// La forma fisica resta il poliedro (piani). Per il disegno ogni faccia viene
+// suddivisa `level` volte e i vertici vengono spostati un po' VERSO L'INTERNO:
+//   - di più vicino a spigoli e angoli → spigoli arrotondati invece che a lama;
+//   - con un rumore fine → superficie irregolare, non un piano perfetto.
+// Lo spostamento dipende solo dalla posizione del punto, quindi le facce vicine
+// restano cucite. Poi le normali vengono mediate tra i triangoli che condividono
+// un vertice: sulle facce restano piatte, sugli spigoli sfumano.
+// Ritorna { position, normal, index } (array tipizzati).
+export function shapeMesh(shape, level = 2) {
+  const P = shape.planes;
+  const noise = (x, y, z) => Math.sin(x * 9.1 + y * 5.3) * Math.cos(z * 8.3 - y * 6.7) * 0.5 + Math.sin(x * 17.3 - z * 13.1 + y * 11.9) * 0.5;
+  // triangoli di partenza
+  let tris = [];
+  for (const f of shape.faces) for (let k = 1; k < f.verts.length - 1; k++) tris.push([f.verts[0], f.verts[k], f.verts[k + 1]]);
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  for (let l = 0; l < level; l++) {
+    const next = [];
+    for (const [a, b, c] of tris) { const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a); next.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]); }
+    tris = next;
+  }
+  // vertici unici (per posizione) → indice
+  const map = new Map(), pos = [], index = [];
+  const W = 0.16, ROUND = 0.035, ROUGH = 0.012;
+  const idOf = v => {
+    const key = `${Math.round(v[0] * 1e4)},${Math.round(v[1] * 1e4)},${Math.round(v[2] * 1e4)}`;
+    let id = map.get(key);
+    if (id === undefined) {
+      let s = 0;                                   // quanti piani sono "vicini": 1 = faccia, 2 = spigolo, 3 = angolo
+      for (let k = 0; k < P.length; k += 4) { const e = P[k + 3] - (P[k] * v[0] + P[k + 1] * v[1] + P[k + 2] * v[2]); const t = Math.max(0, 1 - e / W); s += t * t; }
+      const l = Math.hypot(v[0], v[1], v[2]) || 1;
+      const m = ROUND * Math.max(0, s - 1) + ROUGH * (1 + noise(v[0], v[1], v[2]));
+      id = pos.length / 3;
+      pos.push(v[0] - (v[0] / l) * m, v[1] - (v[1] / l) * m, v[2] - (v[2] / l) * m);
+      map.set(key, id);
+    }
+    return id;
+  };
+  for (const [a, b, c] of tris) index.push(idOf(a), idOf(b), idOf(c));
+  // normali mediate (pesate con l'area)
+  const nor = new Float32Array(pos.length);
+  for (let i = 0; i < index.length; i += 3) {
+    const a = index[i] * 3, b = index[i + 1] * 3, c = index[i + 2] * 3;
+    const e1 = [pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]], e2 = [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]];
+    const n = cross(e1, e2);
+    for (const q of [a, b, c]) { nor[q] += n[0]; nor[q + 1] += n[1]; nor[q + 2] += n[2]; }
+  }
+  for (let i = 0; i < nor.length; i += 3) { const l = Math.hypot(nor[i], nor[i + 1], nor[i + 2]) || 1; nor[i] /= l; nor[i + 1] /= l; nor[i + 2] /= l; }
+  return { position: new Float32Array(pos), normal: nor, index: pos.length / 3 > 65535 ? new Uint32Array(index) : new Uint16Array(index) };
+}

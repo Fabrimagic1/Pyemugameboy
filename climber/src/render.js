@@ -8,11 +8,13 @@ import { FLAG_STAND } from './surface.js';
 import { hash2 } from './rng.js';
 import { environmentAt } from './generator.js';
 import { proceduralDetail, textureArray } from './assets.js';
-import { toon, toToon, smoothGeometry, softenScene, windTime, RAMP_TERRAIN } from './toon.js';
+import { toon, toToon, smoothGeometry, softenScene, windTime, RAMP_TERRAIN, STYLE } from './toon.js';
+import { shapeMesh } from './boulders.js';
 import { FLORA, floraPart } from './flora.js';
 
 const TAU = Math.PI * 2;
 const ROWS_PER_CHUNK = 48;
+const DETAIL = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('detail') ?? 2) : 2;
 export const ROUTE_COLORS = ['#ffffff', '#3fd0ff', '#ffd23f'];
 
 const col = hex => new THREE.Color(hex);
@@ -63,7 +65,7 @@ function primitive(p) {
 const smoothCache = new Map();
 function modelParts(type, assets, variant = 0) {
   const ext = assets && assets.models[type];
-  if (!ext && FLORA[type]) return [floraPart(type, variant)];
+  if (!ext && FLORA[type]) return [floraPart(type, variant, assets && assets.textures)];
   if (ext) {
     const parts = [];
     ext.scene.updateMatrixWorld(true);
@@ -128,7 +130,18 @@ export class WorldView {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying float vBand; varying vec3 vFx; varying vec3 vWN; varying vec3 vWP;
-          uniform highp sampler2DArray uRockArr; uniform highp sampler2DArray uTopArr;`)
+          uniform highp sampler2DArray uRockArr; uniform highp sampler2DArray uTopArr;
+          float gSurfH = 0.0;   // "altezza" della superficie, ricavata dalla texture: serve al rilievo`)
+        // RILIEVO (bump mapping): si piega la normale secondo la variazione di gSurfH tra pixel vicini.
+        // Le crepe scure della texture diventano incavi che prendono luce e ombra davvero.
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+          {
+            vec3 dpx = dFdx(-vViewPosition), dpy = dFdy(-vViewPosition);
+            float dhx = dFdx(gSurfH), dhy = dFdy(gSurfH);
+            vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx);
+            float det = dot(dpx, r1);
+            normal = normalize(abs(det) * normal - ${STYLE === 'real' ? '0.22' : '0.0'} * sign(det) * (dhx * r1 + dhy * r2));
+          }`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           {
             float S = 0.085;                                  // una ripetizione ogni ~12 m (a specchio: 24 m)
@@ -145,37 +158,41 @@ export class WorldView {
             float lum = dot(rock, vec3(0.299, 0.587, 0.114));
             float topF = max(smoothstep(0.56, 0.72, vWN.y + (lum - 0.3) * 0.25), step(0.98, vFx.z));  // vFx.z: piano del nucleo (solo dove TUTTO il triangolo è piano)
             diffuseColor.rgb *= mix(rock, top, topF) * vFx.y;   // vFx.y = variazione di luminosità per macigno
+            gSurfH = mix(lum, dot(top, vec3(0.299, 0.587, 0.114)) * 0.6, topF);
           }`);
     };
 
     // nucleo
-    // Le pareti del nucleo sono solo un riempitivo: le arretriamo di 3 m così restano dietro ai macigni
-    // (niente "denti" della griglia in vista). I piani (spiaggia, spalle) restano dove sono.
-    const coreMat = toon({ rim: 0, ramp: RAMP_TERRAIN, patch: sh => surface(sh, `
-      if (aFx.z < 0.5 && objectNormal.y < 0.75) transformed.xz -= normalize(objectNormal.xz + vec2(1e-5)) * 3.0;
-      vWN = normalize(objectNormal); vWP = transformed;`) });
+    const coreMat = toon({ rim: 0, ramp: RAMP_TERRAIN, patch: sh => surface(sh, 'vWN = normalize(objectNormal); vWP = transformed;') });
+    // "piano" se lo è la quota stessa e i vicini: marca i pianori, dove si disegna la texture di cima
+    const RH = H, flatV = new Uint8Array(H.length);
+    for (let j = 1; j < T.nz - 1; j++) for (let i = 1; i < nx - 1; i++) {
+      const c = j * nx + i, y = H[c];
+      const sx = Math.min(Math.abs(H[c + 1] - y), Math.abs(y - H[c - 1])) / T.C, sz = Math.min(Math.abs(H[c + nx] - y), Math.abs(y - H[c - nx])) / T.C;
+      flatV[c] = Math.hypot(sx, sz) < 0.45 ? 1 : 0;
+    }
     for (let j0 = 0; j0 < T.nz - 1; j0 += ROWS_PER_CHUNK) {
       const j1 = Math.min(T.nz - 1, j0 + ROWS_PER_CHUNK), nr = j1 - j0 + 1;
       const pos = new Float32Array(nr * nx * 3), nor = new Float32Array(nr * nx * 3), band = new Float32Array(nr * nx), fx = new Float32Array(nr * nx * 3);
       for (let jj = 0; jj < nr; jj++) {
         const j = j0 + jj, jm = Math.max(0, j - 1), jp = Math.min(T.nz - 1, j + 1);
         for (let i = 0; i < nx; i++) {
-          const q = jj * nx + i, v = q * 3, c = j * nx + i, y = H[c], im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
+          const q = jj * nx + i, v = q * 3, c = j * nx + i, y = RH[c], im = Math.max(0, i - 1), ip = Math.min(nx - 1, i + 1);
           pos[v] = T.xOf(i); pos[v + 1] = y; pos[v + 2] = T.zOf(j);
-          const gx = (H[j * nx + ip] - H[j * nx + im]) / ((ip - im) * T.C), gz = (H[jp * nx + i] - H[jm * nx + i]) / ((jp - jm) * T.C);
+          const gx = (RH[j * nx + ip] - RH[j * nx + im]) / ((ip - im) * T.C), gz = (RH[jp * nx + i] - RH[jm * nx + i]) / ((jp - jm) * T.C);
           const nl = Math.hypot(gx, 1, gz);
           nor[v] = -gx / nl; nor[v + 1] = 1 / nl; nor[v + 2] = -gz / nl;
           band[q] = w.bandAt(y - 0.5).index;
           fx[v + 1] = (y < SEA + 0.3 ? 0.8 : 1) * (0.95 + 0.1 * hash2(i, j, 7));
-          // "piano" se lo è almeno da un lato per asse: così la striscia di pianoro accanto a una
-          // parete resta pianoro, invece di ereditarne la pendenza
-          const sx = Math.min(Math.abs(H[j * nx + ip] - y), Math.abs(y - H[j * nx + im])) / T.C;
-          const sz = Math.min(Math.abs(H[jp * nx + i] - y), Math.abs(y - H[jm * nx + i])) / T.C;
-          fx[v + 2] = Math.hypot(sx, sz) < 0.45 ? 1 : 0;
+          fx[v + 2] = flatV[c];
         }
       }
       const idx = [];
-      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < nx - 1; i++) { const a = jj * nx + i, b = a + 1, c2 = a + nx, d = c2 + 1; idx.push(a, c2, b, b, c2, d); }
+      // la diagonale di ogni quadrato segue la direzione di minor salto: sulle pareti ripide evita i "denti a sega"
+      for (let jj = 0; jj < nr - 1; jj++) for (let i = 0; i < nx - 1; i++) {
+        const a = jj * nx + i, b = a + 1, c2 = a + nx, d = c2 + 1;
+        if (Math.abs(pos[a * 3 + 1] - pos[d * 3 + 1]) < Math.abs(pos[b * 3 + 1] - pos[c2 * 3 + 1])) idx.push(a, c2, d, a, d, b); else idx.push(a, c2, b, b, c2, d);
+      }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
@@ -196,12 +213,20 @@ export class WorldView {
     w.shapes.forEach((shape, sid) => {
       const list = w.boulders.filter(b => b.shape === sid);
       if (!list.length) return;
-      // mesh del poliedro: un ventaglio di triangoli per faccia, normali piatte (roccia sfaccettata)
-      const pos = [], nor = [];
-      for (const f of shape.faces) for (let k = 1; k < f.verts.length - 1; k++) for (const v of [f.verts[0], f.verts[k], f.verts[k + 1]]) { pos.push(v[0], v[1], v[2]); nor.push(f.n[0], f.n[1], f.n[2]); }
+      // mesh del macigno: facce suddivise, spigoli arrotondati, superficie irregolare (vedi boulders.js).
+      // ?detail=1 dimezza i triangoli due volte; ?detail=0 torna al poliedro a facce piatte.
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      if (DETAIL > 0) {
+        const g = shapeMesh(shape, DETAIL);
+        geo.setAttribute('position', new THREE.BufferAttribute(g.position, 3));
+        geo.setAttribute('normal', new THREE.BufferAttribute(g.normal, 3));
+        geo.setIndex(new THREE.BufferAttribute(g.index, 1));
+      } else {
+        const pos = [], nor = [];
+        for (const f of shape.faces) for (let k = 1; k < f.verts.length - 1; k++) for (const v of [f.verts[0], f.verts[k], f.verts[k + 1]]) { pos.push(v[0], v[1], v[2]); nor.push(f.n[0], f.n[1], f.n[2]); }
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      }
       const band = new Float32Array(list.length), fx = new Float32Array(list.length * 3);
       const mesh = new THREE.InstancedMesh(geo, boulderMat, list.length);
       list.forEach((b, k) => {
@@ -220,9 +245,26 @@ export class WorldView {
 
   buildIsland() {
     const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000),
-      new THREE.MeshStandardMaterial({ color: '#27a9c9', roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.96 }));
+      this.waterMaterial());
     water.rotation.x = -Math.PI / 2; water.position.set(0, SEA, 0);
     this.scene.add(water);
+  }
+
+  // Acqua: superficie lucida che riflette il cielo, con increspature (mappa di normali
+  // procedurale che scorre in due direzioni) e trasparenza maggiore vista dall'alto.
+  waterMaterial() {
+    const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N);
+    const h = (x, y) => Math.sin(x * 0.049 * 2) * Math.cos(y * 0.0736 * 2) + 0.5 * Math.sin((x + y) * 0.1227 * 2) + 0.3 * Math.cos((x * 2 - y) * 0.0982 * 2);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1), l = Math.hypot(dx, dy, 1), i = (y * N + x) * 4;
+      img.data[i] = (-dx / l * 0.5 + 0.5) * 255; img.data[i + 1] = (-dy / l * 0.5 + 0.5) * 255; img.data[i + 2] = (1 / l * 0.5 + 0.5) * 255; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const nm = new THREE.CanvasTexture(cv); nm.wrapS = nm.wrapT = THREE.RepeatWrapping; nm.repeat.set(260, 260);
+    this.waterNormal = nm;
+    return new THREE.MeshPhysicalMaterial({ color: STYLE === 'real' ? '#1f7f9c' : '#27a9c9', roughness: 0.12, metalness: 0, normalMap: nm,
+      normalScale: new THREE.Vector2(0.35, 0.35), transparent: true, opacity: 0.93, envMapIntensity: 1.2 });
   }
 
   buildProps() {
@@ -457,6 +499,7 @@ export class WorldView {
   update(dt, camera, orbit = false, mist = null, lights = null) {
     this.time += dt;
     windTime.value += dt;
+    if (this.waterNormal) { this.waterNormal.offset.x += dt * 0.012; this.waterNormal.offset.y += dt * 0.007; }
     // cielo e nebbia sfumano con la quota della camera
     const env = environmentAt(this.world, orbit ? 5 : camera.position.y);   // dall'orbita: cielo della spiaggia
     this.clouds.visible = !orbit;
@@ -495,6 +538,7 @@ export class WorldView {
     }
     for (const c of this.clouds.children) { const a = c.userData.drift * dt * 0.0012, x = c.position.x, z = c.position.z; c.position.x = x * Math.cos(a) - z * Math.sin(a); c.position.z = x * Math.sin(a) + z * Math.cos(a); }
     this.sky.position.copy(camera.position);
+    if (this.realSky) this.realSky.position.copy(camera.position);
     for (const f of this.fires) {
       const k = 1 + 0.15 * Math.sin(this.time * 17 + f.light.id) + 0.1 * Math.sin(this.time * 7.3);
       f.flame.scale.set(1, k, 1);
