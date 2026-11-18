@@ -333,17 +333,21 @@ static void gen_sprite(u8 sp, u8 base) {
     u8 el = FAM_EL[sp / 3], fam = sp / 3, stg = sp % 3;
     u8 bx = 0, by = 33, bh = 0, ey = 14, ex = 3;
     u8 top = 0, ht = 0, wx = 0, pal, hl, bc, pat, fs, ms;
-    u8 y, x, ty, tx, i, cx0, dec = (fam != 7 && fam != 8 && fam != 4 && fam != 2 && fam != 5);
+    u8 y, x, ty, tx, i, cx0, dec = (fam != 7 && fam != 8 && fam != 4 && fam != 2 && fam != 5 && fam != 0);
     sg = 0x9E37 ^ ((u16)el * 977 + fam * 131 + 7);
     sgr(); sgr();
     for (y = 0; y < 48; y++) for (x = 0; x < 24; x++) hm[y][x] = 0;
     cx0 = sgr() % 3;
     /* ---- scheletro: un archetipo di corpo per famiglia ---- */
     switch (fam) {
-    case 0: /* tondo */
-        blob(0, 30, 11 + stg * 2 + cx0, 10 + stg * 2 + cx0);
-        blob(6, 43, 5, 4); blob(13 + stg, 30, 4, 6);
-        bx = 7; bh = 8; ey = 24; ex = 4; break;
+    case 0: /* rospo di roccia: corpo basso, occhi a palla, bocca larga */
+        blob(0, 35, 13 + stg * 2, 10 + stg); blob(0, 25, 11 + stg, 8);
+        blob(7, 17, 5, 5);                            /* occhi sporgenti */
+        blob(11 + stg, 41, 4, 5); blob(10, 46, 5, 2);  /* zampe */
+        blob(0, 14, 3 + stg, 4); blob(0, 10, 2 + stg, 4); blob(0, 7, 1, 3 + stg); /* roccia in testa */
+        if (stg > 0) { blob(13 + stg, 31, 3, 4); blob(5, 20, 2, 3); }
+        if (stg > 1) { blob(16, 36, 3, 5); blob(9, 14, 2, 4); blob(13, 22, 3, 3); }
+        bx = 9; by = 38; bh = 7; ey = 16; ex = 5; break;
     case 1: /* bipede */
         blob(0, 32, 8 + stg, 9 + stg); blob(0, 14, 8 + stg / 2, 7); blob(0, 21, 5, 4);
         blob(11 + stg, 29, 3, 8); blob(5, 43, 4, 6);
@@ -403,7 +407,7 @@ static void gen_sprite(u8 sp, u8 base) {
     if (!ht) ht = top;
     /* tratti dell'elemento (ancorati al corpo) */
     if (el == 0) {
-        blob(4, ht + 2, 3, 7 + stg * 2 > ht + 2 ? ht + 2 : 7 + stg * 2); if (dec) { blob(wx - 2, 22, 5, 4 + stg); blob(wx - 4, 38, 4, 3); }
+        if (fam != 0) blob(4, ht + 2, 3, 7 + stg * 2 > ht + 2 ? ht + 2 : 7 + stg * 2); if (dec) { blob(wx - 2, 22, 5, 4 + stg); blob(wx - 4, 38, 4, 3); }
     } else if (el == 1) {
         if (dec) { blob(wx, 28, 3, 8 + stg * 2); blob(wx - 3, 42, 3, 4); } blob(0, ht + 1, 3, 6 + stg * 2 > ht + 1 ? ht + 1 : 6 + stg * 2);
     } else if (el == 2) {
@@ -413,8 +417,8 @@ static void gen_sprite(u8 sp, u8 base) {
         if (dec) blob(2, ht, 2, 6);
     }
     /* evoluzione: spuntoni e corna in piu' */
-    if (stg > 0) { if (dec) blob(wx - 1, 24, 3, 4); blob(7 - (!dec) * 3, ht + 1, 2, 5); }
-    if (stg > 1) { if (dec) blob(wx + 1, 18, 3, 6); blob(10 - (!dec) * 6, ht + 4, 2, 7); blob(2, ht - 1, 2, 5); }
+    if (stg > 0) { if (dec) blob(wx - 1, 24, 3, 4); if (fam) blob(7 - (!dec) * 3, ht + 1, 2, 5); }
+    if (stg > 1) { if (dec) blob(wx + 1, 18, 3, 6); if (fam) { blob(10 - (!dec) * 6, ht + 4, 2, 7); blob(2, ht - 1, 2, 5); } }
     /* colori del corpo */
     pal = (fam + el) % 3;
     hl = pal == 1 ? 1 : 0;
@@ -478,7 +482,7 @@ static void gen_sprite(u8 sp, u8 base) {
     fs = (fam + el + (fam >> 1)) & 3;
     ms = (fam + stg) % 3;
     if (fam == 8) fs = 2;
-    if (fam == 5 || fam == 4) fs = 0;
+    if (fam == 5 || fam == 4 || fam == 0) fs = 0;
     if (fam == 8) {
         eell(ey, 9, 8, 3);
         eell(ey, 8, 7, 0);
@@ -505,8 +509,14 @@ static void gen_sprite(u8 sp, u8 base) {
         if (stg) rect(ey - 1, ex, 1, 5, 3);
     }
     if (fam == 4) rect(ey + 4, 0, 3, 3, 3);
+    if (fam == 0) {                    /* bocca larga sorridente */
+        rect(28, 0, 1, 10, 3);
+        rect(27, 10, 1, 2, 3);
+        rect(29, 2, 2, 5, 3);
+        rect(30, 3, 1, 3, 2);
+    }
     y = ey + 5 + (fam == 0 || fam == 6 ? 1 : 0);
-    if (fam != 4 && fam != 5 && fam != 8) {
+    if (fam != 4 && fam != 5 && fam != 8 && fam != 0) {
         if (ms == 0) rect(y, 0, 1, 4 + stg, 3);
         else if (ms == 1) { rect(y, 0, 2, 5, 3); ho[y + 1][1] = 0; ho[y + 1][3] = 0; ho[y][2] = 0; }
         else { rect(y, 0, 1, 5, 3); ho[y + 1][4] = 3; ho[y + 1][0] = 3; }
