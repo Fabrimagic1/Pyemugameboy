@@ -333,7 +333,7 @@ static void gen_sprite(u8 sp, u8 base) {
     u8 el = FAM_EL[sp / 3], fam = sp / 3, stg = sp % 3;
     u8 bx = 0, by = 33, bh = 0, ey = 14, ex = 3;
     u8 top = 0, ht = 0, wx = 0, pal, hl, bc, pat, fs, ms;
-    u8 y, x, ty, tx, i, cx0, dec = (fam != 7 && fam != 8 && fam != 4);
+    u8 y, x, ty, tx, i, cx0, dec = (fam != 7 && fam != 8 && fam != 4 && fam != 2 && fam != 5);
     sg = 0x9E37 ^ ((u16)el * 977 + fam * 131 + 7);
     sgr(); sgr();
     for (y = 0; y < 48; y++) for (x = 0; x < 24; x++) hm[y][x] = 0;
@@ -348,22 +348,28 @@ static void gen_sprite(u8 sp, u8 base) {
         blob(0, 32, 8 + stg, 9 + stg); blob(0, 14, 8 + stg / 2, 7); blob(0, 21, 5, 4);
         blob(11 + stg, 29, 3, 8); blob(5, 43, 4, 6);
         bx = 5; bh = 7; ey = 12; ex = 3; break;
-    case 2: /* serpente */
-        blob(0, 10, 6 + stg, 6); blob(0, 20, 5, 6); blob(0, 29, 8 + stg, 6);
-        blob(0, 39, 11 + stg, 7); blob(0, 46, 8, 2); blob(8 + stg, 12, 4, 5);
-        bx = 6; by = 38; bh = 8; ey = 9; ex = 2; break;
+    case 2: /* cobra: spire, collo, cappuccio largo, testa */
+        blob(0, 43, 13 + stg, 5); blob(0, 38, 10 + stg, 5);
+        blob(0, 31, 7, 6); blob(0, 24, 6, 5);
+        blob(0, 19, 10 + stg * 2, 9); blob(0, 13, 6, 5);
+        bx = 4; by = 33; bh = 6; ey = 12; ex = 2; break;
     case 3: /* quadrupede */
         blob(0, 35, 14 + stg, 9 + stg); blob(0, 21, 8 + stg, 7); blob(6, 13, 3, 6);
         blob(10, 45, 4, 3); blob(4, 45, 3, 3); blob(16, 36, 3, 5);
         bx = 8; by = 38; bh = 6; ey = 20; ex = 3; break;
-    case 4: /* uccello */
-        blob(0, 32, 10 + stg, 11); blob(0, 15, 9 + stg / 2, 8); blob(0, 24, 8, 5); blob(0, 21, 4, 3);
-        blob(14 + stg, 31, 4, 10 + stg); blob(5, 45, 3, 3); blob(0, 8, 2, 4 + stg * 2);
-        bx = 6; by = 35; bh = 8; ey = 12; ex = 3; ht = 9; ey = 13; break;
-    case 5: /* insetto */
-        blob(0, 13, 9 + stg, 8); blob(0, 22, 4, 3); blob(0, 29, 7, 7); blob(0, 41, 6 + stg, 6);
-        blob(5, 3, 1, 5); blob(9, 26, 4, 2); blob(10, 33, 5, 2); blob(9, 40, 4, 2);
-        ey = 11; ex = 4; ht = 6; break;
+    case 4: /* uccello: testa tonda unita al corpo, ali che si aprono con l'evoluzione */
+        blob(0, 31, 11 + stg, 12); blob(0, 17, 10 + stg / 2, 9); blob(0, 23, 9, 5);
+        blob(13 + stg, 30, 3 + stg, 6 + stg * 2);
+        if (stg > 0) blob(17 + stg, 23 - stg, 3, 6 + stg);
+        if (stg > 1) blob(21, 12, 2, 5);
+        blob(5, 45, 3, 3); blob(0, 7, 2, 4 + stg * 2);
+        bx = 6; by = 34; bh = 9; ey = 14; ex = 3; ht = 8; break;
+    case 5: /* mantide: testa, torace sottile, falci ad arco, zampe fini */
+        blob(0, 14, 7 + stg / 2, 6); blob(0, 22, 3, 3); blob(0, 29, 4, 7); blob(0, 41, 5 + stg, 7);
+        blob(6, 29, 2, 5); blob(9, 24, 2, 5); blob(12, 18, 2, 5); blob(13, 12, 2, 4 + stg);
+        if (stg) blob(14, 7, 1, 4);
+        blob(7, 36, 3, 2); blob(10, 40, 2, 3); blob(8, 45, 3, 2); blob(4, 5, 1, 5);
+        ey = 12; ex = 3; ht = 9; break;
     case 6: /* pesce / lumaca */
         blob(0, 31, 16, 9 + stg); blob(0, 19, 3, 6 + stg); blob(0, 44, 8, 4);
         blob(16, 30, 3, 4);
@@ -455,10 +461,24 @@ static void gen_sprite(u8 sp, u8 base) {
         for (y = 41; y < 44; y++) for (x = 12 + stg; x < 17 + stg; x++) if (ho[y][x] != 3 && (y & 1)) ho[y][x] = 3;
         for (y = 22; y < 35; y += 2) { ho[y][(y * 3) % 5 + 6] = 0; ho[y + 1][(y * 3) % 5 + 7] = 0; }
     }
+    if (fam == 2) {                    /* cappuccio a strati e testa */
+        u8 hf = bc == 1 ? 0 : 1;
+        eell(19, 10 + stg * 2, 9, 3);
+        eell(19, 9 + stg * 2, 8, hf);
+        eell(24, 3 + stg, 3, bc);
+        eell(13, 6, 5, 3);
+        eell(13, 5, 4, bc);
+    }
+    if (fam == 2) {                    /* anelli delle spire */
+        for (y = 39; y < 47; y += 3)
+            for (x = 0; x < 14 + stg; x++)
+                if (ho[y][x] != 0 && ho[y][x] != 3 && ((x + y) & 3) != 1) ho[y][x] = 3;
+    }
     /* faccia: occhi (4 stili) e bocca (3 stili) */
     fs = (fam + el + (fam >> 1)) & 3;
     ms = (fam + stg) % 3;
     if (fam == 8) fs = 2;
+    if (fam == 5 || fam == 4) fs = 0;
     if (fam == 8) {
         eell(ey, 9, 8, 3);
         eell(ey, 8, 7, 0);
@@ -484,6 +504,7 @@ static void gen_sprite(u8 sp, u8 base) {
         rect(ey + 1, ex + 1, 2, 2, 3);
         if (stg) rect(ey - 1, ex, 1, 5, 3);
     }
+    if (fam == 4) rect(ey + 4, 0, 3, 3, 3);
     y = ey + 5 + (fam == 0 || fam == 6 ? 1 : 0);
     if (fam != 4 && fam != 5 && fam != 8) {
         if (ms == 0) rect(y, 0, 1, 4 + stg, 3);
